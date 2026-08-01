@@ -17,6 +17,8 @@ import sys
 import threading
 import tkinter as tk
 from tkinter import messagebox, ttk
+import logging
+from logging.handlers import RotatingFileHandler
 
 import keyboard
 import pystray
@@ -67,6 +69,18 @@ def make_btn(parent, text, command, *, size=11, bg=None, fg=None, bold=False,
         highlightbackground=THEME["border"], width=width, state=state)
 
 
+# ---------- 日志 ----------
+
+def setup_logging():
+    log_dir = os.path.join(config.config_dir(), "logs")
+    os.makedirs(log_dir, exist_ok=True)
+    handler = RotatingFileHandler(
+        os.path.join(log_dir, "screenlingo.log"),
+        maxBytes=1024 * 1024, backupCount=3, encoding="utf-8")
+    logging.basicConfig(level=logging.INFO, handlers=[handler],
+                        format="%(asctime)s %(levelname)s %(message)s")
+
+
 # ---------- 管道：主线程截图，后台 OCR/翻译 ----------
 
 def do_ocr_translate(img, mode: str):
@@ -79,10 +93,14 @@ def do_ocr_translate(img, mode: str):
         if mode in ("translate", "both"):
             try:
                 translated = translator.translate(text, cfg)
+                logging.info("translate done: %d chars -> %d chars", len(text), len(translated))
             except Exception as e:
                 err_note = f"[翻译失败 / Translate failed] {e}"
+                logging.exception("translate failed")
+        logging.info("ocr done: mode=%s, %d chars", mode, len(text))
         task_queue.put(("update", mode, text, translated, err_note))
     except Exception as e:
+        logging.exception("ocr pipeline failed")
         task_queue.put(("error", str(e)))
 
 
@@ -295,24 +313,6 @@ def _build_result_window() -> tk.Toplevel:
             item["translated"] = trans_txt.get("1.0", "end-1c")
             status.config(text="已保存修改 ✓", fg=THEME["accent_dark"])
 
-    def copy_orig():
-        item = current()
-        if item:
-            _copy_clipboard(item["text"], status, "原文")
-
-    def copy_trans():
-        item = current()
-        if item and item["translated"]:
-            _copy_clipboard(item["translated"], status, "译文")
-
-    def copy_all():
-        item = current()
-        if item:
-            body = item["text"]
-            if item["translated"]:
-                body += f"\n\n{item['translated']}"
-            _copy_clipboard(body, status, "全部")
-
     prev_btn = make_btn(bar, "◀ 上一个", go_prev)
     prev_btn.pack(side="right", padx=4)
     next_btn = make_btn(bar, "下一个 ▶", go_next)
@@ -442,7 +442,13 @@ def show_settings():
     add_row(0, "OCR 后端", combo)
 
     hotkey_var = tk.StringVar(value=cfg.get("hotkey_menu", "ctrl+alt+o"))
-    add_row(1, "全局快捷键", make_entry(hotkey_var))
+    add_row(1, "菜单快捷键", make_entry(hotkey_var))
+
+    trans_hotkey_var = tk.StringVar(value=cfg.get("hotkey_translate", "ctrl+alt+t"))
+    add_row(2, "直通翻译快捷键", make_entry(trans_hotkey_var))
+
+    copy_hotkey_var = tk.StringVar(value=cfg.get("hotkey_copy", "ctrl+alt+c"))
+    add_row(3, "直通复制快捷键", make_entry(copy_hotkey_var))
 
     key_var = tk.StringVar(value=config.get_api_key(cfg))
     key_frame = tk.Frame(body, bg=THEME["bg"])
@@ -462,7 +468,7 @@ def show_settings():
                         bg=THEME["bg"], cursor="hand2",
                         activebackground=THEME["bg"])
     eye_btn.pack(side="left", padx=(8, 0))
-    add_row(2, "API Key", key_frame)
+    add_row(4, "API Key", key_frame)
 
     def open_ak_page():
         import webbrowser
@@ -471,18 +477,18 @@ def show_settings():
     link = tk.Label(body, text="🔑 不知道 API Key 是什么 / 在哪获取？点这里看步骤",
                     font=(THEME["font"], 10), fg="#2563eb", bg=THEME["bg"],
                     cursor="hand2")
-    link.grid(row=3, column=1, sticky="w", pady=(0, 4))
+    link.grid(row=5, column=1, sticky="w", pady=(0, 4))
     link.bind("<Button-1>", lambda _: open_ak_page())
 
     tk.Frame(body, bg=THEME["border"], height=1).grid(
-        row=4, column=0, columnspan=2, sticky="ew", pady=12)
+        row=6, column=0, columnspan=2, sticky="ew", pady=12)
 
     vision_var = tk.StringVar(value=cfg.get("vision_model", ""))
-    add_row(5, "视觉模型", make_entry(vision_var))
+    add_row(7, "视觉模型", make_entry(vision_var))
     trans_var = tk.StringVar(value=cfg.get("translate_model", ""))
-    add_row(6, "翻译模型", make_entry(trans_var))
+    add_row(8, "翻译模型", make_entry(trans_var))
     autostart_var = tk.BooleanVar(value=is_autostart_enabled())
-    add_row(7, "开机自启", tk.Checkbutton(body, variable=autostart_var,
+    add_row(9, "开机自启", tk.Checkbutton(body, variable=autostart_var,
                                           bg=THEME["bg"], activebackground=THEME["bg"]))
 
     tk.Label(body,
@@ -490,7 +496,7 @@ def show_settings():
                   "API Key 留空则使用环境变量 SILICONFLOW_API_KEY。\n"
                   "点「确定」后设置立即生效，无需重启。",
              font=(THEME["font"], 9), fg=THEME["muted"], bg=THEME["bg"],
-             justify="left").grid(row=8, column=0, columnspan=2, sticky="w",
+             justify="left").grid(row=10, column=0, columnspan=2, sticky="w",
                                   pady=(6, 4))
 
     footer = tk.Frame(win, bg=THEME["bg"])
@@ -500,6 +506,10 @@ def show_settings():
         new_hotkey = hotkey_var.get().strip()
         if new_hotkey:
             cfg["hotkey_menu"] = new_hotkey
+        if trans_hotkey_var.get().strip():
+            cfg["hotkey_translate"] = trans_hotkey_var.get().strip()
+        if copy_hotkey_var.get().strip():
+            cfg["hotkey_copy"] = copy_hotkey_var.get().strip()
         cfg["ocr_backend"] = backend_var.get()
         cfg["api_key"] = key_var.get().strip()
         cfg["vision_model"] = vision_var.get().strip()
@@ -514,6 +524,67 @@ def show_settings():
 
     make_btn(footer, "确定  OK", save, size=13, bold=True,
              bg=THEME["accent"], fg="#ffffff", padx=36, pady=10).pack(side="right")
+
+
+# ---------- 首次运行引导 ----------
+
+def show_welcome():
+    """首次运行（无 API key 且无本地 Tesseract）时弹出引导。"""
+    win = tk.Toplevel(main_root)
+    win.title("ScreenLingo - 欢迎 / Welcome")
+    win.configure(bg=THEME["bg"])
+    win.attributes("-topmost", True)
+    win.geometry("560x380")
+    win.resizable(False, False)
+
+    tk.Label(win, text="👋 欢迎使用 ScreenLingo！", font=(THEME["font"], 16, "bold"),
+             bg=THEME["bg"], fg=THEME["text"]).pack(pady=(26, 12))
+    tk.Label(win, text=(
+        "截图识别与翻译需要调用云端 AI 服务，\n"
+        "首次使用需要配置一个 API Key（云端密钥）。\n\n"
+        "获取步骤（约 2 分钟，免费注册）：\n"
+        "1. 打开 siliconflow.cn 注册并登录\n"
+        "2. 左侧菜单「API 密钥」→ 新建 API 密钥\n"
+        "3. 复制 sk- 开头的字符串（关闭后不再显示）\n"
+        "4. 点下方「打开设置」粘贴进去，点确定\n\n"
+        "不想用云端？也可以安装本地 Tesseract 后\n"
+        "在设置里把 OCR 后端切到 tesseract。"),
+        font=(THEME["font"], 11), bg=THEME["bg"], fg=THEME["text"],
+        justify="left").pack(padx=36, anchor="w")
+
+    bar = tk.Frame(win, bg=THEME["bg"])
+    bar.pack(pady=(18, 22))
+
+    def open_ak_page():
+        import webbrowser
+        webbrowser.open("https://cloud.siliconflow.cn/account/ak")
+        win.destroy()
+
+    def open_settings():
+        win.destroy()
+        show_settings()
+
+    make_btn(bar, "🔑 打开密钥页", open_ak_page, size=11, bold=True,
+             bg=THEME["accent"], fg="#ffffff", padx=20, pady=8).pack(side="left", padx=6)
+    make_btn(bar, "⚙️ 打开设置", open_settings).pack(side="left", padx=6)
+    make_btn(bar, "稍后再说", win.destroy).pack(side="left", padx=6)
+
+    win.update_idletasks()
+    x = (win.winfo_screenwidth() - 560) // 2
+    y = (win.winfo_screenheight() - 380) // 2
+    win.geometry(f"+{x}+{y}")
+
+
+# ---------- 单实例锁 ----------
+
+def ensure_single_instance() -> bool:
+    """防止多开：第二个实例直接退出。返回 False 表示已有实例在运行。"""
+    try:
+        import ctypes
+        ctypes.windll.kernel32.CreateMutexW(None, False, "ScreenLingo_SingleInstance")
+        return ctypes.windll.kernel32.GetLastError() != 183  # ERROR_ALREADY_EXISTS
+    except Exception:
+        return True
 
 
 # ---------- 开机自启（注册表） ----------
@@ -616,6 +687,7 @@ def on_menu_hotkey():
 
 
 def rebind_hotkeys(cfg: dict):
+    """先解绑旧热键，再注册全部热键（菜单 + 直通翻译 + 直通复制）。保存设置后立即生效。"""
     global hotkey_handles
     for h in hotkey_handles:
         try:
@@ -623,13 +695,25 @@ def rebind_hotkeys(cfg: dict):
         except Exception:
             pass
     hotkey_handles = []
-    hotkey = cfg.get("hotkey_menu", "ctrl+alt+o")
-    try:
-        hotkey_handles.append(keyboard.add_hotkey(hotkey, on_menu_hotkey))
-    except Exception as e:
+    binds = [
+        (cfg.get("hotkey_menu", "ctrl+alt+o"), on_menu_hotkey),
+        (cfg.get("hotkey_translate", "ctrl+alt+t"),
+         lambda: task_queue.put(("action", "translate"))),
+        (cfg.get("hotkey_copy", "ctrl+alt+c"),
+         lambda: task_queue.put(("action", "copy"))),
+    ]
+    errors = []
+    for hotkey, fn in binds:
+        try:
+            hotkey_handles.append(keyboard.add_hotkey(hotkey, fn))
+        except Exception as e:
+            logging.error("hotkey %s register failed: %s", hotkey, e)
+            errors.append(f"{hotkey}: {e}")
+    if errors:
         messagebox.showerror(
             "ScreenLingo",
-            f"注册全局热键失败（格式错误或需要管理员权限）：\n{e}",
+            "部分全局热键注册失败（格式错误或需要管理员权限）：\n"
+            + "\n".join(errors),
             parent=main_root)
 
 
@@ -657,11 +741,26 @@ def poll_queue():
 
 def main():
     global main_root, icon
+    setup_logging()
+    logging.info("ScreenLingo started")
     main_root = tk.Tk()
     main_root.withdraw()
 
+    if not ensure_single_instance():
+        logging.warning("another instance already running, exit")
+        messagebox.showwarning(
+            "ScreenLingo",
+            "ScreenLingo 已经在运行中。\nScreenLingo is already running.",
+            parent=main_root)
+        main_root.destroy()
+        return
+
     cfg = config.load()
     rebind_hotkeys(cfg)
+
+    # 首次运行引导：无 API key 且无本地 Tesseract
+    if not config.get_api_key(cfg) and not ocr.tesseract_available():
+        main_root.after(900, show_welcome)
 
     icon = setup_icon()
     icon.run_detached()

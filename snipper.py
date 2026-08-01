@@ -10,7 +10,7 @@ import mss
 import tkinter as tk
 from PIL import Image, ImageEnhance, ImageTk
 
-FRAME_COLOR = "#1e90ff"  # 选区框：道奇蓝（参考 QQ/Windows 截图风格）
+FRAME_COLOR = "#ff8c00"  # 选区框：橙红虚线（参考 Windows 自带截图工具 Snip & Sketch 风格）
 
 FONT = "Microsoft YaHei UI"
 
@@ -48,18 +48,24 @@ def capture_selection(parent=None) -> Image.Image | None:
     canvas.pack()
     canvas.create_image(0, 0, anchor="nw", image=photo)
 
-    state = {"x0": 0, "y0": 0, "rect": None, "size_text": None}
+    state = {"x0": 0, "y0": 0, "lines": None, "size_text": None}
 
     def draw_rect(x1, y1, x2, y2):
-        if state["rect"]:
-            canvas.delete(state["rect"])
+        # 用四条 create_line 画虚线边框（create_rectangle 不支持 dash）
+        if state["lines"]:
+            for ln in state["lines"]:
+                canvas.delete(ln)
         if state["size_text"]:
             canvas.delete(state["size_text"])
-        state["rect"] = canvas.create_rectangle(
-            x1, y1, x2, y2, outline=FRAME_COLOR, width=2)
+        state["lines"] = [
+            canvas.create_line(x1, y1, x2, y1, fill=FRAME_COLOR, width=2, dash=(6, 4)),
+            canvas.create_line(x2, y1, x2, y2, fill=FRAME_COLOR, width=2, dash=(6, 4)),
+            canvas.create_line(x2, y2, x1, y2, fill=FRAME_COLOR, width=2, dash=(6, 4)),
+            canvas.create_line(x1, y2, x1, y1, fill=FRAME_COLOR, width=2, dash=(6, 4)),
+        ]
         sw, sh = abs(x2 - x1), abs(y2 - y1)
-        tx = min(x1, x2) + 4
-        ty = min(y1, y2) + sw + 8 if sw > 0 else min(y1, y2) + 8
+        tx = min(x1, x2) + 6
+        ty = min(y1, y2) + sw + 10 if sw > 0 else min(y1, y2) + 10
         state["size_text"] = canvas.create_text(
             tx, ty, anchor="nw", text=f"{sw} × {sh}",
             fill=FRAME_COLOR, font=(FONT, 12, "bold"))

@@ -19,6 +19,7 @@ venv_build\Scripts\python -m PyInstaller ^
     --onefile --windowed --name ScreenLingo ^
     --hidden-import tkinter ^
     --collect-all pystray ^
+    --icon icon.ico ^
     main.py
 
 echo [4/4] 完成！

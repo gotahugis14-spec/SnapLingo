@@ -35,21 +35,31 @@
 **第 3 步：使用**
 
 1. 按下全局快捷键 `Ctrl + Alt + O`
-2. 屏幕出现半透明遮罩，鼠标**拖拽框选**你要识别的区域，松开鼠标
+2. 屏幕出现**暗色遮罩**（Windows 截图工具同款**橙色虚线框**），鼠标**拖拽框选**你要识别的区域，松开鼠标
 3. 弹出三个选项：🌐 翻译 / 📋 复制文字 / ✨ 翻译+复制，点一个
-4. 结果窗口弹出，文字**已经自动复制到剪贴板**，直接 `Ctrl + V` 粘贴即可
+4. **结果窗口立刻弹出**（先显示加载中），文字识别/翻译完成后**原地更新**，并**自动复制到剪贴板**，直接 `Ctrl + V` 粘贴即可
 
 > 💡 第一次使用如果提示"未配置 API key"，请看下方 [🔑 API Key 是什么？去哪里获取](#-api-key-是什么去哪里获取新手必看)。
 
-### 🎨 快捷键（可以换绑！）
+### 🎨 快捷键（全部可以换绑！）
 
-默认快捷键：`Ctrl + Alt + O`（打开操作菜单）。
+| 快捷键 | 作用 |
+|---|---|
+| `Ctrl + Alt + O` | 弹操作菜单（翻译 / 复制 / 翻译+复制） |
+| `Ctrl + Alt + T` | **直通翻译**：截图后直接翻译，不弹菜单 |
+| `Ctrl + Alt + C` | **直通复制**：截图后直接复制文字，不弹菜单 |
 
 **想换成别的键？** 很简单：
 
 1. 右键托盘图标 → 「设置…」
-2. 在「全局快捷键」一栏输入新组合，例如：`alt+shift+k`、`f8`、`ctrl+alt+c`
-3. 点「保存」——**立即生效，不用重启**
+2. 在「菜单快捷键 / 直通翻译快捷键 / 直通复制快捷键」三栏输入新组合，例如：`alt+shift+k`、`f8`、`ctrl+alt+c`
+3. 点右下角「确定」——**立即生效，不用重启**
+
+### 📸 效果预览
+
+![截图遮罩效果](docs/screenshot-mask.png)
+
+橙色虚线框 + 暗色遮罩 + 实时尺寸提示（与 Windows 自带截图工具一致）。
 
 ### ⚙️ 配置
 
@@ -60,7 +70,9 @@
 | 配置项 | 说明 |
 |---|---|
 | OCR 后端 | `auto`（默认，自动选择）/ `tesseract`（本地离线）/ `api`（云端，最准） |
-| 全局快捷键 | 输入新组合键即可换绑（如 `alt+shift+k`、`f8`） |
+| 菜单快捷键 | 弹操作菜单的热键（默认 `ctrl+alt+o`） |
+| 直通翻译快捷键 | 截图后直接翻译（默认 `ctrl+alt+t`） |
+| 直通复制快捷键 | 截图后直接复制文字（默认 `ctrl+alt+c`） |
 | API Key | 云端识别/翻译的密钥，输入框右侧有个 👁 小眼睛，点击可切换明文/密文显示 |
 | 视觉模型 / 翻译模型 | 默认已配好 SiliconFlow 的模型，一般不用改 |
 | 开机自启 | 勾选后开机自动运行，真正"挂在后台" |
@@ -129,7 +141,13 @@ A：先确认托盘有绿色图标。如果被其他软件占用了热键，到�
 A：API Key 是一串 `sk-` 开头的密钥，在 [SiliconFlow](https://cloud.siliconflow.cn) 注册后，到「API 密钥」页新建并复制即可（详细步骤见上方「🔑 API Key 是什么？」）。配置后重新框选。纯本地用户可把 OCR 后端切到 `tesseract`（需自行安装 Tesseract 和中文语言包 chi_sim）。
 
 **Q：翻译出来不对 / 想要指定翻译方向？**
-A：ScreenLingo 按文字内容自动判断：有中文字符就翻成英文，否则翻成中文。
+A：自动互译：有中文字符就翻成英文，其他语言（日/韩/法等）也能识别并翻成中文。
+
+**Q：开了两个 exe 会冲突吗？**
+A：不会。程序带单实例锁，重复启动会提示"已经在运行中"并自动退出。
+
+**Q：日志在哪？**
+A：`%APPDATA%\ScreenLingo\logs\screenlingo.log`（自动轮转，最多保留 3 份）。报 issue 时附上日志会很有帮助。
 
 **Q：exe 被杀毒软件报毒？**
 A：这是 PyInstaller 打包程序的常见误报。本项目完全开源，代码可自查；添加信任即可。
@@ -163,22 +181,34 @@ A：v0.2 支持主显示器框选；多显示器适配在规划中。
 
 1. **Get the app**: download `ScreenLingo.exe` from [Releases](../../releases) (or double-click the one in the project folder)
 2. **Run it**: double-click the exe — a green camera icon appears in the system tray (click `^` if hidden)
-3. **Use it**: press `Ctrl + Alt + O` → drag-select the area → choose an action (Translate / Copy / Both) → result is **already in your clipboard**, just paste with `Ctrl + V`
+3. **Use it**: press `Ctrl + Alt + O` → drag-select the area (orange dashed frame, like Windows Snipping Tool) → choose an action → the result window pops up **instantly** (loading…) and updates in place when done — text is **already in your clipboard**
 
-### 🎨 Hotkey (rebindable!)
+### 🎨 Hotkeys (all rebindable!)
 
-Default: `Ctrl + Alt + O`. Rebind anytime: right-click tray icon → **Settings** → enter a new combo (e.g. `alt+shift+k`, `f8`) → **Save**. It takes effect immediately — no restart needed.
+| Hotkey | Action |
+|---|---|
+| `Ctrl + Alt + O` | Open action menu (Translate / Copy / Both) |
+| `Ctrl + Alt + T` | **Direct translate**: capture → translate immediately |
+| `Ctrl + Alt + C` | **Direct copy**: capture → copy text immediately |
+
+Rebind anytime: right-click tray icon → **Settings** → three hotkey fields → **OK**. Takes effect immediately — no restart needed.
+
+### 📸 Preview
+
+![Selection mask](docs/screenshot-mask.png)
+
+Orange dashed frame + dimmed overlay + live size hint (same style as the built-in Windows snipping tool).
 
 ### ⚙️ Configuration
 
 Right-click the tray icon → **Settings**:
 - **OCR backend**: `auto` (default) / `tesseract` (local, offline) / `api` (cloud, most accurate)
-- **Global hotkey**: type a new combo to rebind (e.g. `alt+shift+k`, `f8`)
+- **Menu hotkey / Direct-translate hotkey / Direct-copy hotkey**: three rebindable hotkeys (defaults `ctrl+alt+o/t/c`)
 - **API Key**: the `sk-` key for cloud OCR/translation. Click the 👁 eye icon next to the field to toggle between masked/plain text
 - **Vision/Translate model**: preconfigured for SiliconFlow, usually no need to change
 - **Autostart**: run at Windows startup
 
-> 💡 Click the green **OK** button at the bottom-right to apply changes (hotkey rebinds immediately, no restart).
+> 💡 Click the green **OK** button at the bottom-right to apply changes (hotkeys rebind immediately, no restart). Single-instance lock prevents double-launch conflicts. Logs: `%APPDATA%\ScreenLingo\logs\screenlingo.log`.
 
 **Where do I get an API Key?** Register at [SiliconFlow](https://cloud.siliconflow.cn) (free tier available) → menu **API Keys** → **Create API Key** → copy the `sk-` string immediately (it won't be shown again). Paste it in Settings → API Key → OK. Alternatively set the env var `SILICONFLOW_API_KEY` so the key never touches a file. Config file: `%APPDATA%\ScreenLingo\config.json`
 

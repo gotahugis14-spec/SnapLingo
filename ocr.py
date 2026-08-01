@@ -2,6 +2,7 @@
 import base64
 import io
 import shutil
+import time
 
 import requests
 
@@ -62,7 +63,25 @@ def _ocr_api(img, cfg: dict) -> str:
         "max_tokens": 2000,
     }
     headers = {"Authorization": f"Bearer {api_key}"}
-    resp = requests.post(url, json=payload, headers=headers, timeout=120)
-    resp.raise_for_status()
-    data = resp.json()
-    return data["choices"][0]["message"]["content"].strip()
+    return _post_with_retry(url, payload, headers)
+
+
+def _post_with_retry(url: str, payload: dict, headers: dict,
+                     attempts: int = 3, timeout: int = 120) -> str:
+    """带重试的 POST：对 429/5xx 和网络异常自动重试（递增等待）。"""
+    last: Exception | None = None
+    for i in range(attempts):
+        try:
+            resp = requests.post(url, json=payload, headers=headers,
+                                 timeout=timeout)
+            if resp.status_code in (429, 500, 502, 503, 504):
+                last = RuntimeError(
+                    f"服务繁忙（HTTP {resp.status_code}），请稍后重试。")
+                time.sleep(1.5 * (i + 1))
+                continue
+            resp.raise_for_status()
+            return resp.json()["choices"][0]["message"]["content"].strip()
+        except requests.RequestException as e:
+            last = e
+            time.sleep(1.5 * (i + 1))
+    raise last if isinstance(last, Exception) else RuntimeError("请求失败")

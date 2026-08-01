@@ -11,7 +11,9 @@ DEFAULTS = {
     "translate_model": "deepseek-ai/DeepSeek-V3.2",
     "api_key": "",           # 也可用环境变量 SILICONFLOW_API_KEY
     "tesseract_lang": "chi_sim+eng",
-    "hotkey_menu": "ctrl+alt+o",  # 全局热键：弹操作菜单
+    "hotkey_menu": "ctrl+alt+o",      # 全局热键：弹操作菜单
+    "hotkey_translate": "ctrl+alt+t",  # 直通热键：截图后直接翻译
+    "hotkey_copy": "ctrl+alt+c",       # 直通热键：截图后直接复制
 }
 
 
