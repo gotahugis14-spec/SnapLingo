@@ -39,6 +39,8 @@
 3. 弹出三个选项：🌐 翻译 / 📋 复制文字 / ✨ 翻译+复制，点一个
 4. **结果窗口立刻弹出**（先显示加载中），文字识别/翻译完成后**原地更新**，并**自动复制到剪贴板**，直接 `Ctrl + V` 粘贴即可
 
+> 🌐 **切换翻译语种**：结果窗口「译文」标题右侧有目标语种下拉（自动 / 中文 / 英文 / 日文 / 韩文 / 法文 / 德文 / 西班牙文 / 俄文），选择后立即重新翻译并复制，选择会被记住。
+
 > 💡 第一次使用如果提示"未配置 API key"，请看下方 [🔑 API Key 是什么？去哪里获取](#-api-key-是什么去哪里获取新手必看)。
 
 ### 🎨 快捷键（全部可以换绑！）
@@ -75,6 +77,7 @@
 | 直通复制快捷键 | 截图后直接复制文字（默认 `ctrl+alt+c`） |
 | API Key | 云端识别/翻译的密钥，输入框右侧有个 👁 小眼睛，点击可切换明文/密文显示 |
 | 视觉模型 / 翻译模型 | 默认已配好 SiliconFlow 的模型，一般不用改 |
+| 默认翻译方向 | 默认 `自动`（中文→英文、其他→中文）；也可固定为某语种（指定后识别+翻译**一次请求完成，速度更快**） |
 | 开机自启 | 勾选后开机自动运行，真正"挂在后台" |
 
 配置文件位置：`%APPDATA%\ScreenLingo\config.json`
@@ -173,9 +176,11 @@ A：v0.2 支持主显示器框选；多显示器适配在规划中。
 
 | Action | Result |
 |---|---|
-| 🌐 **Translate** | Auto-detect language and translate between Chinese and English |
+| 🌐 **Translate** | Auto-detect language and translate to the target language of your choice |
 | 📋 **Copy Text** | Extract the text and copy it to clipboard |
 | ✨ **Both** | Translate and copy the result |
+
+> 🌐 **Switch target language** right in the result window: the dropdown next to "Translation" offers Auto / Chinese / English / Japanese / Korean / French / German / Spanish / Russian. Your choice is remembered. When a specific language is set, OCR + translation complete in **a single API request** (≈half the latency).
 
 ### 🚀 Quick Start (3 steps)
 

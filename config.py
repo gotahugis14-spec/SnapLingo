@@ -9,6 +9,7 @@ DEFAULTS = {
     "api_base_url": "https://api.siliconflow.cn/v1",
     "vision_model": "Qwen/Qwen3-VL-8B-Instruct",
     "translate_model": "deepseek-ai/DeepSeek-V3.2",
+    "translate_target": "auto",  # 翻译目标语种: auto/zh/en/ja/ko/fr/de/es/ru
     "api_key": "",           # 也可用环境变量 SILICONFLOW_API_KEY
     "tesseract_lang": "chi_sim+eng",
     "hotkey_menu": "ctrl+alt+o",      # 全局热键：弹操作菜单

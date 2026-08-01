@@ -3,6 +3,7 @@
   "api_base_url": "https://api.siliconflow.cn/v1",
   "vision_model": "Qwen/Qwen3-VL-8B-Instruct",
   "translate_model": "deepseek-ai/DeepSeek-V3.2",
+  "translate_target": "auto",
   "api_key": "",
   "tesseract_lang": "chi_sim+eng",
   "hotkey_menu": "ctrl+alt+o",

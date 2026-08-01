@@ -1,7 +1,7 @@
 """翻译：OpenAI 兼容文本模型，任意语言内容 → 目标语言（默认中英互译）
 
-提示词不假设源语言（由模型自行识别），因此日文/韩文/法文等
-任何语言都能正确翻译，而非被误当成英文。
+支持主流语种切换：中文/英文/日文/韩文/法文/德文/西班牙文/俄文。
+提示词不假设源语言（由模型自行识别）。
 """
 import time
 
@@ -9,7 +9,20 @@ import requests
 
 import config
 
-LANG_NAMES = {"zh": "中文", "en": "英文"}
+# 支持的主流语种
+LANG_NAMES = {
+    "zh": "中文",
+    "en": "英文",
+    "ja": "日文",
+    "ko": "韩文",
+    "fr": "法文",
+    "de": "德文",
+    "es": "西班牙文",
+    "ru": "俄文",
+}
+
+# keep-alive：复用连接，减少 TLS/HTTP 握手开销（提速）
+_session = requests.Session()
 
 
 def detect_language(text: str) -> str:
@@ -18,12 +31,18 @@ def detect_language(text: str) -> str:
     return "zh" if cn > 0 else "en"
 
 
+def target_name(target: str) -> str:
+    return LANG_NAMES.get(target, target)
+
+
 def translate(text: str, cfg: dict, target: str = None) -> str:
-    """把 text 翻译成 target；target 缺省时自动：中文->英文，其他->中文。"""
+    """把 text 翻译成 target（zh/en/ja/ko/fr/de/es/ru）。
+    target 缺省或 "auto" 时自动：中文->英文，其他->中文。"""
     if not text.strip():
         return ""
     src = detect_language(text)
-    target = target or ("en" if src == "zh" else "zh")
+    if not target or target == "auto":
+        target = "en" if src == "zh" else "zh"
     if src == target:
         return text.strip()
 
@@ -31,7 +50,7 @@ def translate(text: str, cfg: dict, target: str = None) -> str:
     if not api_key:
         raise RuntimeError("未配置 API key，无法翻译。")
     prompt = (
-        f"你是一个翻译工具。把用户提供的内容翻译成{LANG_NAMES[target]}。"
+        f"你是一个翻译工具。把用户提供的内容翻译成{LANG_NAMES.get(target, target)}。"
         "内容可能是任何语言，请先自行识别。只输出翻译结果本身，"
         "不要解释、不要加引号、不要输出原文。"
     )
@@ -54,7 +73,7 @@ def _post_with_retry(url: str, payload: dict, headers: dict,
     last: Exception | None = None
     for i in range(attempts):
         try:
-            resp = requests.post(url, json=payload, headers=headers,
+            resp = _session.post(url, json=payload, headers=headers,
                                  timeout=timeout)
             if resp.status_code in (429, 500, 502, 503, 504):
                 last = RuntimeError(

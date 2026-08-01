@@ -35,9 +35,13 @@ last_mode = {"mode": "copy"}
 hotkey_handles = []
 
 # 历史记录：单结果窗口 + 上一条/下一条浏览
-history = []  # 每项 {"mode", "text", "translated", "err_note"}
+history = []  # 每项 {"mode", "text", "translated", "err_note", "target"}
 hist_idx = {"i": -1}
 result_win = {"win": None}
+
+# 目标语种映射（"auto" = 自动中英互译）
+TARGET_NAMES = {"auto": "自动", **translator.LANG_NAMES}
+NAME_TO_CODE = {v: k for k, v in TARGET_NAMES.items()}
 
 AUTOSTART_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 AUTOSTART_NAME = "ScreenLingo"
@@ -84,24 +88,57 @@ def setup_logging():
 # ---------- 管道：主线程截图，后台 OCR/翻译 ----------
 
 def do_ocr_translate(img, mode: str):
-    """后台线程执行 OCR/翻译（耗时网络请求不阻塞 UI）。mode: copy/translate/both"""
+    """后台线程执行 OCR/翻译。mode: copy/translate/both。
+
+    翻译类模式：目标语种已指定（非 auto）时用单次请求完成识别+翻译
+    （两次 API 调用减为一次，速度更快），失败自动回退两次请求；
+    auto 时两次请求（先识别再自动翻译）。"""
     try:
         cfg = config.load()
-        text = ocr.ocr_image(img, cfg)
-        translated = ""
-        err_note = ""
-        if mode in ("translate", "both"):
+        target = cfg.get("translate_target", "auto")
+        if mode in ("translate", "both") and target != "auto":
             try:
-                translated = translator.translate(text, cfg)
-                logging.info("translate done: %d chars -> %d chars", len(text), len(translated))
+                text, translated = ocr.ocr_and_translate(img, cfg, target)
+                logging.info("single-shot ocr+translate done: target=%s, %d chars",
+                             target, len(text))
+                task_queue.put(("update", mode, text, translated, "", target))
+                return
             except Exception as e:
-                err_note = f"[翻译失败 / Translate failed] {e}"
-                logging.exception("translate failed")
+                logging.warning("single-shot failed, fallback to two-step: %s", e)
+        text, translated, err_note = _ocr_then_translate(
+            img, cfg, target, do_translate=mode in ("translate", "both"))
         logging.info("ocr done: mode=%s, %d chars", mode, len(text))
-        task_queue.put(("update", mode, text, translated, err_note))
+        task_queue.put(("update", mode, text, translated, err_note, target))
     except Exception as e:
         logging.exception("ocr pipeline failed")
         task_queue.put(("error", str(e)))
+
+
+def _ocr_then_translate(img, cfg, target: str, do_translate: bool = True):
+    """两次请求路径：纯 OCR + 文本翻译。返回 (text, translated, err_note)。"""
+    text = ocr.ocr_image(img, cfg)
+    translated, err_note = "", ""
+    if not do_translate:
+        return text, translated, err_note
+    try:
+        translated = translator.translate(
+            text, cfg, target=(None if target == "auto" else target))
+    except Exception as e:
+        err_note = f"[翻译失败 / Translate failed] {e}"
+        logging.exception("translate failed")
+    return text, translated, err_note
+
+
+def retranslate_current(idx: int, text: str, lang: str):
+    """后台：按新目标语种重翻指定历史项。"""
+    try:
+        cfg = config.load()
+        translated = translator.translate(
+            text, cfg, target=(None if lang == "auto" else lang))
+        task_queue.put(("retranslate", idx, translated, ""))
+    except Exception as e:
+        logging.exception("retranslate failed")
+        task_queue.put(("retranslate", idx, "", str(e)))
 
 
 def begin_capture(mode: str):
@@ -206,6 +243,7 @@ def show_result_window(mode: str):
         set_text(win._trans_txt, "—（此模式不翻译）")
     set_text(win._orig_txt, "⏳ 正在识别截图中的文字…")
     win._pos_label.config(text="—")
+    win._lang_var.set(TARGET_NAMES.get(config.load().get("translate_target", "auto"), "自动"))
     for b in (win._prev_btn, win._next_btn, win._del_btn,
               win._edit_btn, win._copy_orig, win._copy_trans, win._copy_all):
         b.config(state="disabled")
@@ -237,9 +275,35 @@ def _build_result_window() -> tk.Toplevel:
     orig_txt.pack(fill="x", padx=16)
     orig_txt.configure(state="disabled")
 
-    # 译文区
-    tk.Label(win, text="🌐 译文 / Translation", font=(THEME["font"], 11, "bold"),
-             bg=THEME["bg"], fg=THEME["text"]).pack(anchor="w", padx=16, pady=(10, 2))
+    # 译文区（标题右侧带目标语种切换下拉）
+    trans_head = tk.Frame(win, bg=THEME["bg"])
+    trans_head.pack(fill="x", padx=16, pady=(10, 2))
+    tk.Label(trans_head, text="🌐 译文 / Translation", font=(THEME["font"], 11, "bold"),
+             bg=THEME["bg"], fg=THEME["text"]).pack(side="left")
+    lang_var = tk.StringVar(value="自动")
+    lang_combo = ttk.Combobox(trans_head, textvariable=lang_var, state="readonly",
+                              values=list(TARGET_NAMES.values()), width=8,
+                              font=(THEME["font"], 10))
+    lang_combo.pack(side="right")
+
+    def on_lang_change(_=None):
+        lang = NAME_TO_CODE.get(lang_var.get(), "auto")
+        i = hist_idx["i"]
+        if not (0 <= i < len(history)):
+            return
+        item = history[i]
+        if item.get("target") == lang and item.get("translated"):
+            return
+        status.config(text=f"⏳ 正在翻译为{lang_var.get()}…", fg=THEME["text"])
+        item["target"] = lang
+        cfg = config.load()
+        cfg["translate_target"] = lang
+        config.save(cfg)
+        threading.Thread(target=retranslate_current,
+                         args=(i, item["text"], lang), daemon=True).start()
+
+    lang_combo.bind("<<ComboboxSelected>>", on_lang_change)
+
     trans_txt = tk.Text(win, wrap="word", font=(THEME["font"], 12),
                         bg=THEME["card"], fg=THEME["text"],
                         relief="flat", bd=0, padx=12, pady=10, height=9)
@@ -344,6 +408,7 @@ def _build_result_window() -> tk.Toplevel:
 
     win._orig_txt = orig_txt
     win._trans_txt = trans_txt
+    win._lang_var = lang_var
     win._pos_label = pos_label
     win._prev_btn = prev_btn
     win._next_btn = next_btn
@@ -373,10 +438,10 @@ def _copy_cur(orig_txt, trans_txt, status, label):
         _copy_clipboard(body, status, "全部")
 
 
-def update_result(mode: str, text: str, translated: str, err_note: str):
+def update_result(mode: str, text: str, translated: str, err_note: str, target: str):
     """后台结果就绪：追加历史、自动复制、刷新窗口。"""
-    history.append({"mode": mode, "text": text,
-                    "translated": translated, "err_note": err_note})
+    history.append({"mode": mode, "text": text, "translated": translated,
+                    "err_note": err_note, "target": target})
     hist_idx["i"] = len(history) - 1
     # 自动复制最新结果
     if translated:
@@ -387,24 +452,29 @@ def update_result(mode: str, text: str, translated: str, err_note: str):
         main_root.clipboard_append(text)
     win = result_win["win"]
     if win is not None and win.winfo_exists():
-        # 重新构建当前项到窗口
-        i = hist_idx["i"]
-        item = history[i]
-        set_text(win._orig_txt, item["text"])
-        if item["translated"]:
-            set_text(win._trans_txt, item["translated"] + (f"\n\n{item['err_note']}" if item.get("err_note") else ""))
-        elif item.get("err_note"):
-            set_text(win._trans_txt, f"—\n\n{item['err_note']}")
-        else:
-            set_text(win._trans_txt, "—（此模式不翻译）")
-        win._pos_label.config(text=f"{i + 1} / {len(history)}")
-        for b in (win._prev_btn, win._next_btn, win._del_btn,
-                  win._edit_btn, win._copy_orig, win._copy_trans, win._copy_all):
-            b.config(state="normal")
-        win._prev_btn.config(state="normal" if i > 0 else "disabled")
-        win._next_btn.config(state="normal" if i < len(history) - 1 else "disabled")
-        win._edit_btn.config(text="✏️ 编辑")
+        apply_item_to_window(win, hist_idx["i"])
         win._status.config(text="已复制最新结果 ✓", fg=THEME["accent_dark"])
+        win._lang_var.set(TARGET_NAMES.get(target, "自动"))
+
+
+def apply_item_to_window(win, idx: int):
+    """把 history[idx] 填充到窗口（历史浏览/更新/重翻共用）。"""
+    item = history[idx]
+    set_text(win._orig_txt, item["text"])
+    if item["translated"]:
+        set_text(win._trans_txt, item["translated"]
+                 + (f"\n\n{item['err_note']}" if item.get("err_note") else ""))
+    elif item.get("err_note"):
+        set_text(win._trans_txt, f"—\n\n{item['err_note']}")
+    else:
+        set_text(win._trans_txt, "—（此模式不翻译）")
+    win._pos_label.config(text=f"{idx + 1} / {len(history)}")
+    for b in (win._prev_btn, win._next_btn, win._del_btn,
+              win._edit_btn, win._copy_orig, win._copy_trans, win._copy_all):
+        b.config(state="normal")
+    win._prev_btn.config(state="normal" if idx > 0 else "disabled")
+    win._next_btn.config(state="normal" if idx < len(history) - 1 else "disabled")
+    win._edit_btn.config(text="✏️ 编辑")
 
 
 # ---------- 设置窗口 ----------
@@ -488,15 +558,21 @@ def show_settings():
     trans_var = tk.StringVar(value=cfg.get("translate_model", ""))
     add_row(8, "翻译模型", make_entry(trans_var))
     autostart_var = tk.BooleanVar(value=is_autostart_enabled())
-    add_row(9, "开机自启", tk.Checkbutton(body, variable=autostart_var,
-                                          bg=THEME["bg"], activebackground=THEME["bg"]))
+
+    target_var = tk.StringVar(value=TARGET_NAMES.get(cfg.get("translate_target", "auto"), "自动"))
+    target_combo = ttk.Combobox(body, textvariable=target_var,
+                                values=list(TARGET_NAMES.values()), state="readonly")
+    add_row(9, "默认翻译方向", target_combo)
+
+    add_row(10, "开机自启", tk.Checkbutton(body, variable=autostart_var,
+                                           bg=THEME["bg"], activebackground=THEME["bg"]))
 
     tk.Label(body,
              text="快捷键格式示例：ctrl+alt+o / alt+shift+k / f8\n"
                   "API Key 留空则使用环境变量 SILICONFLOW_API_KEY。\n"
                   "点「确定」后设置立即生效，无需重启。",
              font=(THEME["font"], 9), fg=THEME["muted"], bg=THEME["bg"],
-             justify="left").grid(row=10, column=0, columnspan=2, sticky="w",
+             justify="left").grid(row=11, column=0, columnspan=2, sticky="w",
                                   pady=(6, 4))
 
     footer = tk.Frame(win, bg=THEME["bg"])
@@ -514,6 +590,7 @@ def show_settings():
         cfg["api_key"] = key_var.get().strip()
         cfg["vision_model"] = vision_var.get().strip()
         cfg["translate_model"] = trans_var.get().strip()
+        cfg["translate_target"] = NAME_TO_CODE.get(target_var.get(), "auto")
         config.save(cfg)
         set_autostart(autostart_var.get())
         rebind_hotkeys(cfg)
@@ -732,7 +809,23 @@ def poll_queue():
         elif kind == "action":
             begin_capture(payload[0])
         elif kind == "update":
-            update_result(payload[0], payload[1], payload[2], payload[3])
+            update_result(payload[0], payload[1], payload[2], payload[3], payload[4])
+        elif kind == "retranslate":
+            idx, translated, err = payload
+            if 0 <= idx < len(history):
+                history[idx]["translated"] = translated
+                history[idx]["err_note"] = err
+                win = result_win["win"]
+                if win is not None and win.winfo_exists() and hist_idx["i"] == idx:
+                    apply_item_to_window(win, idx)
+                    if translated:
+                        main_root.clipboard_clear()
+                        main_root.clipboard_append(translated)
+                        win._status.config(
+                            text=f"已翻译并复制：{TARGET_NAMES.get(history[idx].get('target', 'auto'), '')} ✓",
+                            fg=THEME["accent_dark"])
+                    elif err:
+                        win._status.config(text=f"翻译失败：{err}", fg="#dc2626")
         elif kind == "error":
             messagebox.showerror("ScreenLingo", str(payload[0]), parent=main_root)
     if not exit_flag["quit"]:

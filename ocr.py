@@ -1,17 +1,28 @@
-"""OCR 后端：tesseract（本地离线）/ api（OpenAI 兼容视觉模型）"""
+"""OCR 后端：tesseract（本地离线）/ api（OpenAI 兼容视觉模型）
+
+api 后端支持两种调用：
+- ocr_image：纯识别
+- ocr_and_translate：单次请求同时完成识别+翻译（翻译类模式提速，两次请求→一次）
+"""
 import base64
 import io
+import json
+import re
 import shutil
 import time
 
 import requests
 
 import config
+import translator
 
 SYSTEM_PROMPT = (
     "你是一个 OCR 工具。请识别图片中的全部文字，"
     "严格按原文输出（保留换行），不要添加任何解释、标点修正或翻译。"
 )
+
+# keep-alive：复用连接，减少 TLS/HTTP 握手开销（提速）
+_session = requests.Session()
 
 
 def tesseract_available() -> bool:
@@ -45,6 +56,46 @@ def _to_data_url(img) -> str:
 
 
 def _ocr_api(img, cfg: dict) -> str:
+    url, payload, headers = _api_request(img, cfg, SYSTEM_PROMPT)
+    return _post_with_retry(url, payload, headers)
+
+
+def ocr_and_translate(img, cfg: dict, target: str) -> tuple[str, str]:
+    """单次视觉模型请求同时完成识别+翻译（翻译类模式提速：两次请求→一次）。
+    返回 (原文, 译文)；解析失败抛 ValueError（调用方回退两次请求）。"""
+    target_cn = translator.target_name(target)
+    prompt = (
+        "你是一个截图文字工具。请先识别图片中的全部文字，"
+        f"然后把识别出的文字翻译成{target_cn}。\n"
+        "严格按以下格式输出，不要输出任何其他内容：\n"
+        "【原文】\n<识别的原文，保留换行>\n"
+        "【译文】\n<翻译结果>"
+    )
+    url, payload, headers = _api_request(img, cfg, prompt)
+    content = _post_with_retry(url, payload, headers)
+    parsed = _parse_orig_trans(content)
+    if parsed is None:
+        raise ValueError("识别+翻译结果解析失败，回退两次请求")
+    return parsed
+
+
+def _parse_orig_trans(content: str) -> tuple[str, str] | None:
+    """解析【原文】...【译文】... 格式；失败再试 JSON。"""
+    m = re.search(r"【原文】\s*(.*?)\s*【译文】\s*(.*)", content, re.S)
+    if m:
+        orig, trans = m.group(1).strip(), m.group(2).strip()
+        if orig and trans:
+            return orig, trans
+    try:
+        data = json.loads(content)
+        if isinstance(data, dict) and data.get("original") and data.get("translation"):
+            return data["original"].strip(), data["translation"].strip()
+    except Exception:
+        pass
+    return None
+
+
+def _api_request(img, cfg: dict, prompt: str):
     api_key = config.get_api_key(cfg)
     if not api_key:
         raise RuntimeError(
@@ -56,14 +107,14 @@ def _ocr_api(img, cfg: dict) -> str:
         "messages": [{
             "role": "user",
             "content": [
-                {"type": "text", "text": SYSTEM_PROMPT},
+                {"type": "text", "text": prompt},
                 {"type": "image_url", "image_url": {"url": _to_data_url(img)}},
             ],
         }],
         "max_tokens": 2000,
     }
     headers = {"Authorization": f"Bearer {api_key}"}
-    return _post_with_retry(url, payload, headers)
+    return url, payload, headers
 
 
 def _post_with_retry(url: str, payload: dict, headers: dict,
@@ -72,7 +123,7 @@ def _post_with_retry(url: str, payload: dict, headers: dict,
     last: Exception | None = None
     for i in range(attempts):
         try:
-            resp = requests.post(url, json=payload, headers=headers,
+            resp = _session.post(url, json=payload, headers=headers,
                                  timeout=timeout)
             if resp.status_code in (429, 500, 502, 503, 504):
                 last = RuntimeError(
