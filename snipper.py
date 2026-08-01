@@ -1,12 +1,18 @@
 """全屏遮罩 + 鼠标框选截图（主显示器）
 
+样式参考主流截图工具（Snipaste/QQ 截图）：暗色遮罩 + 蓝色选区框 + 尺寸提示。
+
 重要：必须把 parent（主 Tk 实例）传进来，用 Toplevel 显示遮罩，
 不要自建 Tk —— 多个 Tk 实例会互相干扰，导致
 "image 'pyimageN' doesn't exist" 之类的错误。
 """
 import mss
 import tkinter as tk
-from PIL import Image, ImageTk
+from PIL import Image, ImageEnhance, ImageTk
+
+FRAME_COLOR = "#1e90ff"  # 选区框：道奇蓝（参考 QQ/Windows 截图风格）
+
+FONT = "Microsoft YaHei UI"
 
 
 def _grab_screen() -> Image.Image:
@@ -23,37 +29,47 @@ def capture_selection(parent=None) -> Image.Image | None:
     嵌套事件循环，全程只有主线程一个 Tk 实例，杜绝 pyimage 错误。
     """
     bg = _grab_screen()
+    # 遮罩背景：原图压暗，模拟专业截图工具的暗色遮罩
+    dim = ImageEnhance.Brightness(bg).enhance(0.45)
     result = {"img": None}
 
     if parent is not None:
         win = tk.Toplevel(parent)
     else:
-        # 兜底：无主窗口时自建（仅测试/无 GUI 场景）
         win = tk.Tk()
     win.overrideredirect(True)
     win.attributes("-topmost", True)
-    win.attributes("-alpha", 0.92)
     w, h = bg.size
     win.geometry(f"{w}x{h}+0+0")
 
-    photo = ImageTk.PhotoImage(bg)
+    photo = ImageTk.PhotoImage(dim)
     win._screenlingo_photo = photo  # 持有引用，防止被垃圾回收
     canvas = tk.Canvas(win, width=w, height=h, highlightthickness=0)
     canvas.pack()
     canvas.create_image(0, 0, anchor="nw", image=photo)
 
-    state = {"x0": 0, "y0": 0, "rect": None}
+    state = {"x0": 0, "y0": 0, "rect": None, "size_text": None}
+
+    def draw_rect(x1, y1, x2, y2):
+        if state["rect"]:
+            canvas.delete(state["rect"])
+        if state["size_text"]:
+            canvas.delete(state["size_text"])
+        state["rect"] = canvas.create_rectangle(
+            x1, y1, x2, y2, outline=FRAME_COLOR, width=2)
+        sw, sh = abs(x2 - x1), abs(y2 - y1)
+        tx = min(x1, x2) + 4
+        ty = min(y1, y2) + sw + 8 if sw > 0 else min(y1, y2) + 8
+        state["size_text"] = canvas.create_text(
+            tx, ty, anchor="nw", text=f"{sw} × {sh}",
+            fill=FRAME_COLOR, font=(FONT, 12, "bold"))
 
     def on_press(e):
         state["x0"], state["y0"] = e.x, e.y
-        if state["rect"]:
-            canvas.delete(state["rect"])
-        state["rect"] = canvas.create_rectangle(
-            e.x, e.y, e.x, e.y, outline="#00c853", width=2)
+        draw_rect(e.x, e.y, e.x, e.y)
 
     def on_drag(e):
-        if state["rect"]:
-            canvas.coords(state["rect"], state["x0"], state["y0"], e.x, e.y)
+        draw_rect(state["x0"], state["y0"], e.x, e.y)
 
     def on_release(e):
         x1, x2 = sorted((state["x0"], e.x))

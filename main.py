@@ -2,13 +2,14 @@
 
 使用流程：
   按热键（默认 Ctrl+Alt+O）→ 弹出操作选择（翻译 / 复制文字 / 翻译+复制）
-  → 鼠标框选屏幕区域 → 按所选操作执行，结果窗口弹出，文字自动进剪贴板。
+  → 鼠标框选屏幕区域 → 立即弹出结果窗口（显示加载中）→ 识别/翻译完成后原地更新
+  → 结果窗口支持历史浏览（上一个/下一个）、删除、编辑。
 
 线程模型：
-- 主线程：隐藏 Tk root，负责菜单/结果窗/设置窗/剪贴板，poll_queue 轮询
+- 主线程：隐藏 Tk root，负责菜单/截图遮罩/结果窗/设置窗/剪贴板，poll_queue 轮询
 - pystray：托盘图标线程
 - keyboard：全局热键回调线程，只向队列投递事件，不碰 UI
-- 工作线程：截图 -> OCR -> (翻译)，结果入队
+- 工作线程：OCR/翻译（耗时网络请求），完成后结果入队
 """
 import os
 import queue
@@ -31,6 +32,11 @@ exit_flag = {"quit": False}
 last_mode = {"mode": "copy"}
 hotkey_handles = []
 
+# 历史记录：单结果窗口 + 上一条/下一条浏览
+history = []  # 每项 {"mode", "text", "translated", "err_note"}
+hist_idx = {"i": -1}
+result_win = {"win": None}
+
 AUTOSTART_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 AUTOSTART_NAME = "ScreenLingo"
 
@@ -48,7 +54,7 @@ THEME = {
 
 
 def make_btn(parent, text, command, *, size=11, bg=None, fg=None, bold=False,
-             padx=16, pady=8, width=None):
+             padx=16, pady=8, width=None, state="normal"):
     """统一样式的按钮"""
     return tk.Button(
         parent, text=text, command=command,
@@ -58,7 +64,7 @@ def make_btn(parent, text, command, *, size=11, bg=None, fg=None, bold=False,
         activeforeground=THEME["text"],
         relief="flat", bd=0, padx=padx, pady=pady,
         cursor="hand2", highlightthickness=1,
-        highlightbackground=THEME["border"], width=width)
+        highlightbackground=THEME["border"], width=width, state=state)
 
 
 # ---------- 管道：主线程截图，后台 OCR/翻译 ----------
@@ -74,21 +80,21 @@ def do_ocr_translate(img, mode: str):
             try:
                 translated = translator.translate(text, cfg)
             except Exception as e:
-                # 翻译失败不丢原文：结果窗口仍显示，附失败原因
-                err_note = f"\n\n[翻译失败 / Translate failed] {e}"
-        task_queue.put(("result", mode, text, translated, err_note))
+                err_note = f"[翻译失败 / Translate failed] {e}"
+        task_queue.put(("update", mode, text, translated, err_note))
     except Exception as e:
         task_queue.put(("error", str(e)))
 
 
 def begin_capture(mode: str):
-    """在主线程调用：弹遮罩截图，拿到图片后起后台线程处理。
+    """在主线程调用：弹遮罩截图 → 立即弹结果窗口（加载中）→ 后台处理。
     遮罩必须用主线程的主 Tk 实例（Toplevel），否则会出现
     'image pyimage does not exist' 错误。"""
     last_mode["mode"] = mode
     img = snipper.capture_selection(main_root)
     if img is None:
         return
+    show_result_window(mode)  # 立即弹出，显示加载中
     threading.Thread(target=do_ocr_translate, args=(img, mode), daemon=True).start()
 
 
@@ -142,57 +148,263 @@ def show_mode_menu() -> str | None:
     return result["mode"]
 
 
-# ---------- 结果窗口 ----------
+# ---------- 结果窗口（单实例 + 历史浏览 + 编辑） ----------
 
-def show_result_window(mode: str, text: str, translated: str, err_note: str = ""):
+def set_text(txt: tk.Text, s: str):
+    txt.config(state="normal")
+    txt.delete("1.0", "end")
+    txt.insert("1.0", s)
+    txt.config(state="disabled")
+
+
+def _copy_clipboard(s: str, status=None, label=""):
+    main_root.clipboard_clear()
+    main_root.clipboard_append(s)
+    if status is not None:
+        status.config(text=f"已复制：{label} ✓", fg=THEME["accent_dark"])
+
+
+def _make_status(bar) -> tk.Label:
+    status = tk.Label(bar, text="", font=(THEME["font"], 10),
+                      fg=THEME["accent_dark"], bg=THEME["bg"])
+    return status
+
+
+def show_result_window(mode: str):
+    """确保结果窗口存在并置前，显示加载中。完成后由 update_result 填充。"""
+    win = result_win["win"]
+    if win is None or not win.winfo_exists():
+        win = _build_result_window()
+        result_win["win"] = win
+    win._mode = mode
+    win._editing = False
+    win.deiconify()
+    win.lift()
+    win.focus_force()
+
+    if mode in ("translate", "both"):
+        set_text(win._trans_txt, "⏳ 正在翻译…")
+    else:
+        set_text(win._trans_txt, "—（此模式不翻译）")
+    set_text(win._orig_txt, "⏳ 正在识别截图中的文字…")
+    win._pos_label.config(text="—")
+    for b in (win._prev_btn, win._next_btn, win._del_btn,
+              win._edit_btn, win._copy_orig, win._copy_trans, win._copy_all):
+        b.config(state="disabled")
+    win._edit_btn.config(text="✏️ 编辑")
+
+
+def _build_result_window() -> tk.Toplevel:
     win = tk.Toplevel(main_root)
     win.title("ScreenLingo - 识别结果 / Result")
     win.configure(bg=THEME["bg"])
     win.attributes("-topmost", True)
-    win.geometry("920x660")
+    win.geometry("920x680")
 
-    if translated:
-        body = f"【原文 / Original】\n{text}\n\n【译文 / Translation】\n{translated}"
-    else:
-        body = text
-    if err_note:
-        body += err_note
+    # 顶部：历史位置 + 标题
+    head = tk.Frame(win, bg=THEME["bg"])
+    head.pack(fill="x", padx=16, pady=(12, 0))
+    tk.Label(head, text="识别结果 / Result", font=(THEME["font"], 14, "bold"),
+             bg=THEME["bg"], fg=THEME["text"]).pack(side="left")
+    pos_label = tk.Label(head, text="—", font=(THEME["font"], 11),
+                         fg=THEME["muted"], bg=THEME["bg"])
+    pos_label.pack(side="right")
 
-    txt = tk.Text(win, wrap="word", font=(THEME["font"], 12),
-                  bg=THEME["card"], fg=THEME["text"],
-                  relief="flat", bd=0, padx=14, pady=12)
-    txt.insert("1.0", body)
-    txt.configure(state="disabled")
-    txt.pack(fill="both", expand=True, padx=14, pady=(14, 8))
+    # 原文区
+    tk.Label(win, text="📄 原文 / Original", font=(THEME["font"], 11, "bold"),
+             bg=THEME["bg"], fg=THEME["text"]).pack(anchor="w", padx=16, pady=(10, 2))
+    orig_txt = tk.Text(win, wrap="word", font=(THEME["font"], 12),
+                       bg=THEME["card"], fg=THEME["text"],
+                       relief="flat", bd=0, padx=12, pady=10, height=9)
+    orig_txt.pack(fill="x", padx=16)
+    orig_txt.configure(state="disabled")
 
+    # 译文区
+    tk.Label(win, text="🌐 译文 / Translation", font=(THEME["font"], 11, "bold"),
+             bg=THEME["bg"], fg=THEME["text"]).pack(anchor="w", padx=16, pady=(10, 2))
+    trans_txt = tk.Text(win, wrap="word", font=(THEME["font"], 12),
+                        bg=THEME["card"], fg=THEME["text"],
+                        relief="flat", bd=0, padx=12, pady=10, height=9)
+    trans_txt.pack(fill="both", expand=True, padx=16, pady=(0, 8))
+    trans_txt.configure(state="disabled")
+
+    # 按钮栏
     bar = tk.Frame(win, bg=THEME["bg"])
-    bar.pack(fill="x", padx=14, pady=(0, 14))
+    bar.pack(fill="x", padx=16, pady=(0, 12))
+    status = _make_status(bar)
+    status.pack(side="left")
 
-    def copy_and(label, s):
+    def current():
+        i = hist_idx["i"]
+        return history[i] if 0 <= i < len(history) else None
+
+    def refresh():
+        """把当前历史项填进窗口。"""
+        item = current()
+        if item is None:
+            return
+        set_text(orig_txt, item["text"])
+        if item["translated"]:
+            set_text(trans_txt, item["translated"] + (f"\n\n{item['err_note']}" if item.get("err_note") else ""))
+        elif item.get("err_note"):
+            set_text(trans_txt, f"—\n\n{item['err_note']}")
+        else:
+            set_text(trans_txt, "—（此模式不翻译）")
+        pos_label.config(text=f"{hist_idx['i'] + 1} / {len(history)}")
+        for b in (prev_btn, next_btn, del_btn, edit_btn,
+                  copy_orig, copy_trans, copy_all):
+            b.config(state="normal")
+        prev_btn.config(state="normal" if hist_idx["i"] > 0 else "disabled")
+        next_btn.config(state="normal" if hist_idx["i"] < len(history) - 1 else "disabled")
+        edit_btn.config(text="✏️ 编辑")
+
+    def go_prev():
+        if hist_idx["i"] > 0:
+            hist_idx["i"] -= 1
+            refresh()
+
+    def go_next():
+        if hist_idx["i"] < len(history) - 1:
+            hist_idx["i"] += 1
+            refresh()
+
+    def delete_current():
+        if current() is None:
+            return
+        i = hist_idx["i"]
+        history.pop(i)
+        if not history:
+            hist_idx["i"] = -1
+            result_win["win"] = None
+            win.destroy()
+            return
+        hist_idx["i"] = min(i, len(history) - 1)
+        refresh()
+
+    def toggle_edit():
+        item = current()
+        if item is None:
+            return
+        editing = not win._editing
+        win._editing = editing
+        for t in (orig_txt, trans_txt):
+            t.config(state="normal" if editing else "disabled")
+        edit_btn.config(text="✅ 保存" if editing else "✏️ 编辑")
+        if not editing:  # 保存编辑内容
+            item["text"] = orig_txt.get("1.0", "end-1c")
+            item["translated"] = trans_txt.get("1.0", "end-1c")
+            status.config(text="已保存修改 ✓", fg=THEME["accent_dark"])
+
+    def copy_orig():
+        item = current()
+        if item:
+            _copy_clipboard(item["text"], status, "原文")
+
+    def copy_trans():
+        item = current()
+        if item and item["translated"]:
+            _copy_clipboard(item["translated"], status, "译文")
+
+    def copy_all():
+        item = current()
+        if item:
+            body = item["text"]
+            if item["translated"]:
+                body += f"\n\n{item['translated']}"
+            _copy_clipboard(body, status, "全部")
+
+    prev_btn = make_btn(bar, "◀ 上一个", go_prev)
+    prev_btn.pack(side="right", padx=4)
+    next_btn = make_btn(bar, "下一个 ▶", go_next)
+    next_btn.pack(side="right", padx=4)
+    del_btn = make_btn(bar, "🗑 删除", delete_current)
+    del_btn.pack(side="right", padx=4)
+    edit_btn = make_btn(bar, "✏️ 编辑", toggle_edit)
+    edit_btn.pack(side="right", padx=4)
+    def close_win():
+        result_win["win"] = None
+        win.destroy()
+
+    def again():
+        result_win["win"] = None
+        win.destroy()
+        task_queue.put(("action", last_mode["mode"]))
+
+    make_btn(bar, "↻ 再来一次", again).pack(side="right", padx=4)
+    make_btn(bar, "关闭", close_win).pack(side="right", padx=4)
+    copy_orig = make_btn(bar, "复制原文",
+                         lambda: _copy_cur(orig_txt, trans_txt, status, "原文"))
+    copy_orig.pack(side="right", padx=4)
+    copy_trans = make_btn(bar, "复制译文",
+                          lambda: _copy_cur(orig_txt, trans_txt, status, "译文"))
+    copy_trans.pack(side="right", padx=4)
+    copy_all = make_btn(bar, "复制全部",
+                        lambda: _copy_cur(orig_txt, trans_txt, status, "全部"))
+    copy_all.pack(side="right", padx=4)
+
+    win._orig_txt = orig_txt
+    win._trans_txt = trans_txt
+    win._pos_label = pos_label
+    win._prev_btn = prev_btn
+    win._next_btn = next_btn
+    win._del_btn = del_btn
+    win._edit_btn = edit_btn
+    win._copy_orig = copy_orig
+    win._copy_trans = copy_trans
+    win._copy_all = copy_all
+    win._status = status
+    return win
+
+
+def _copy_cur(orig_txt, trans_txt, status, label):
+    """复制当前窗口显示的内容（按标签）"""
+    i = hist_idx["i"]
+    if not (0 <= i < len(history)):
+        return
+    item = history[i]
+    if label == "原文":
+        _copy_clipboard(item["text"], status, "原文")
+    elif label == "译文" and item["translated"]:
+        _copy_clipboard(item["translated"], status, "译文")
+    elif label == "全部":
+        body = item["text"]
+        if item["translated"]:
+            body += f"\n\n{item['translated']}"
+        _copy_clipboard(body, status, "全部")
+
+
+def update_result(mode: str, text: str, translated: str, err_note: str):
+    """后台结果就绪：追加历史、自动复制、刷新窗口。"""
+    history.append({"mode": mode, "text": text,
+                    "translated": translated, "err_note": err_note})
+    hist_idx["i"] = len(history) - 1
+    # 自动复制最新结果
+    if translated:
         main_root.clipboard_clear()
-        main_root.clipboard_append(s)
-        status.config(text=f"已复制：{label} ✓", fg=THEME["accent_dark"])
-
-    make_btn(bar, "复制原文 / Copy Original",
-             lambda: copy_and("原文 / Original", text)).pack(side="left")
-    if translated:
-        make_btn(bar, "复制译文 / Copy Translation",
-                 lambda: copy_and("译文 / Translation", translated)).pack(side="left", padx=8)
-    make_btn(bar, "复制全部 / Copy All",
-             lambda: copy_and("全部 / All", body)).pack(side="left", padx=8)
-    make_btn(bar, "↻ 再来一次 / Again",
-             lambda: (win.destroy(), task_queue.put(("action", last_mode["mode"])))).pack(side="left", padx=8)
-    make_btn(bar, "关闭 / Close", win.destroy).pack(side="left", padx=8)
-
-    status = tk.Label(bar, text="", font=(THEME["font"], 10),
-                      fg=THEME["accent_dark"], bg=THEME["bg"])
-    status.pack(side="left", padx=12)
-
-    # 自动复制：翻译相关模式复制译文，否则复制原文
-    if translated:
-        copy_and("译文 / Translation", translated)
+        main_root.clipboard_append(translated)
     else:
-        copy_and("原文 / Original", text)
+        main_root.clipboard_clear()
+        main_root.clipboard_append(text)
+    win = result_win["win"]
+    if win is not None and win.winfo_exists():
+        # 重新构建当前项到窗口
+        i = hist_idx["i"]
+        item = history[i]
+        set_text(win._orig_txt, item["text"])
+        if item["translated"]:
+            set_text(win._trans_txt, item["translated"] + (f"\n\n{item['err_note']}" if item.get("err_note") else ""))
+        elif item.get("err_note"):
+            set_text(win._trans_txt, f"—\n\n{item['err_note']}")
+        else:
+            set_text(win._trans_txt, "—（此模式不翻译）")
+        win._pos_label.config(text=f"{i + 1} / {len(history)}")
+        for b in (win._prev_btn, win._next_btn, win._del_btn,
+                  win._edit_btn, win._copy_orig, win._copy_trans, win._copy_all):
+            b.config(state="normal")
+        win._prev_btn.config(state="normal" if i > 0 else "disabled")
+        win._next_btn.config(state="normal" if i < len(history) - 1 else "disabled")
+        win._edit_btn.config(text="✏️ 编辑")
+        win._status.config(text="已复制最新结果 ✓", fg=THEME["accent_dark"])
 
 
 # ---------- 设置窗口 ----------
@@ -224,17 +436,14 @@ def show_settings():
                         relief="solid", bd=1, highlightthickness=1,
                         highlightbackground=THEME["border"])
 
-    # OCR 后端
     backend_var = tk.StringVar(value=cfg.get("ocr_backend", "auto"))
     combo = ttk.Combobox(body, textvariable=backend_var,
                          values=["auto", "tesseract", "api"], state="readonly")
     add_row(0, "OCR 后端", combo)
 
-    # 全局快捷键
     hotkey_var = tk.StringVar(value=cfg.get("hotkey_menu", "ctrl+alt+o"))
     add_row(1, "全局快捷键", make_entry(hotkey_var))
 
-    # API Key + 小眼睛（点击切换明文/密文）
     key_var = tk.StringVar(value=config.get_api_key(cfg))
     key_frame = tk.Frame(body, bg=THEME["bg"])
     key_entry = tk.Entry(key_frame, textvariable=key_var, show="*",
@@ -255,7 +464,6 @@ def show_settings():
     eye_btn.pack(side="left", padx=(8, 0))
     add_row(2, "API Key", key_frame)
 
-    # API Key 获取指引链接
     def open_ak_page():
         import webbrowser
         webbrowser.open("https://cloud.siliconflow.cn/account/ak")
@@ -266,11 +474,9 @@ def show_settings():
     link.grid(row=3, column=1, sticky="w", pady=(0, 4))
     link.bind("<Button-1>", lambda _: open_ak_page())
 
-    # 分隔线
     tk.Frame(body, bg=THEME["border"], height=1).grid(
         row=4, column=0, columnspan=2, sticky="ew", pady=12)
 
-    # 进阶选项
     vision_var = tk.StringVar(value=cfg.get("vision_model", ""))
     add_row(5, "视觉模型", make_entry(vision_var))
     trans_var = tk.StringVar(value=cfg.get("translate_model", ""))
@@ -287,7 +493,6 @@ def show_settings():
              justify="left").grid(row=8, column=0, columnspan=2, sticky="w",
                                   pady=(6, 4))
 
-    # 右下角确定按钮：点按才保存并生效
     footer = tk.Frame(win, bg=THEME["bg"])
     footer.pack(fill="x", padx=28, pady=(0, 22))
 
@@ -407,12 +612,10 @@ def setup_icon() -> pystray.Icon:
 # ---------- 全局热键 ----------
 
 def on_menu_hotkey():
-    # keyboard 回调线程：只投递事件，UI 由主线程处理
     task_queue.put(("menu",))
 
 
 def rebind_hotkeys(cfg: dict):
-    """先解绑旧热键，再注册新热键。保存设置后立即生效。"""
     global hotkey_handles
     for h in hotkey_handles:
         try:
@@ -444,9 +647,8 @@ def poll_queue():
                 begin_capture(mode)
         elif kind == "action":
             begin_capture(payload[0])
-        elif kind == "result":
-            mode, text, translated, err_note = payload
-            show_result_window(mode, text, translated, err_note)
+        elif kind == "update":
+            update_result(payload[0], payload[1], payload[2], payload[3])
         elif kind == "error":
             messagebox.showerror("ScreenLingo", str(payload[0]), parent=main_root)
     if not exit_flag["quit"]:
