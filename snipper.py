@@ -1,4 +1,9 @@
-"""全屏遮罩 + 鼠标框选截图（主显示器）"""
+"""全屏遮罩 + 鼠标框选截图（主显示器）
+
+重要：必须把 parent（主 Tk 实例）传进来，用 Toplevel 显示遮罩，
+不要自建 Tk —— 多个 Tk 实例会互相干扰，导致
+"image 'pyimageN' doesn't exist" 之类的错误。
+"""
 import mss
 import tkinter as tk
 from PIL import Image, ImageTk
@@ -11,20 +16,29 @@ def _grab_screen() -> Image.Image:
         return Image.frombytes("RGB", raw.size, raw.bgra, "raw", "BGRX")
 
 
-def capture_selection() -> Image.Image | None:
-    """显示全屏遮罩，鼠标框选区域，返回裁剪后的图片；Esc 或点选过小返回 None"""
+def capture_selection(parent=None) -> Image.Image | None:
+    """显示全屏遮罩，鼠标框选区域，返回裁剪后的图片；Esc 或点选过小返回 None。
+
+    parent：主 Tk 实例（推荐必传）。传入时用 Toplevel 显示，wait_window
+    嵌套事件循环，全程只有主线程一个 Tk 实例，杜绝 pyimage 错误。
+    """
     bg = _grab_screen()
     result = {"img": None}
 
-    root = tk.Tk()
-    root.overrideredirect(True)
-    root.attributes("-topmost", True)
-    root.attributes("-alpha", 0.92)
+    if parent is not None:
+        win = tk.Toplevel(parent)
+    else:
+        # 兜底：无主窗口时自建（仅测试/无 GUI 场景）
+        win = tk.Tk()
+    win.overrideredirect(True)
+    win.attributes("-topmost", True)
+    win.attributes("-alpha", 0.92)
     w, h = bg.size
-    root.geometry(f"{w}x{h}+0+0")
+    win.geometry(f"{w}x{h}+0+0")
 
     photo = ImageTk.PhotoImage(bg)
-    canvas = tk.Canvas(root, width=w, height=h, highlightthickness=0)
+    win._screenlingo_photo = photo  # 持有引用，防止被垃圾回收
+    canvas = tk.Canvas(win, width=w, height=h, highlightthickness=0)
     canvas.pack()
     canvas.create_image(0, 0, anchor="nw", image=photo)
 
@@ -45,18 +59,21 @@ def capture_selection() -> Image.Image | None:
         x1, x2 = sorted((state["x0"], e.x))
         y1, y2 = sorted((state["y0"], e.y))
         if x2 - x1 < 3 or y2 - y1 < 3:  # 过小视为取消
-            root.destroy()
+            win.destroy()
             return
         result["img"] = bg.crop((x1, y1, x2, y2))
-        root.destroy()
+        win.destroy()
 
     def on_escape(_):
-        root.destroy()
+        win.destroy()
 
     canvas.bind("<ButtonPress-1>", on_press)
     canvas.bind("<B1-Motion>", on_drag)
     canvas.bind("<ButtonRelease-1>", on_release)
-    root.bind("<Escape>", on_escape)
+    win.bind("<Escape>", on_escape)
 
-    root.mainloop()
+    if parent is not None:
+        win.wait_window()  # 嵌套事件循环，主线程继续处理其他 Tk 事件
+    else:
+        win.mainloop()
     return result["img"]

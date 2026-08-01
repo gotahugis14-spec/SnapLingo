@@ -61,14 +61,11 @@ def make_btn(parent, text, command, *, size=11, bg=None, fg=None, bold=False,
         highlightbackground=THEME["border"], width=width)
 
 
-# ---------- 管道：截图 -> OCR -> (翻译) ----------
+# ---------- 管道：主线程截图，后台 OCR/翻译 ----------
 
-def run_pipeline(mode: str):
-    """后台线程执行。mode: copy / translate / both"""
+def do_ocr_translate(img, mode: str):
+    """后台线程执行 OCR/翻译（耗时网络请求不阻塞 UI）。mode: copy/translate/both"""
     try:
-        img = snipper.capture_selection()
-        if img is None:
-            return
         cfg = config.load()
         text = ocr.ocr_image(img, cfg)
         translated = ""
@@ -84,9 +81,15 @@ def run_pipeline(mode: str):
         task_queue.put(("error", str(e)))
 
 
-def start_pipeline(mode: str):
+def begin_capture(mode: str):
+    """在主线程调用：弹遮罩截图，拿到图片后起后台线程处理。
+    遮罩必须用主线程的主 Tk 实例（Toplevel），否则会出现
+    'image pyimage does not exist' 错误。"""
     last_mode["mode"] = mode
-    threading.Thread(target=run_pipeline, args=(mode,), daemon=True).start()
+    img = snipper.capture_selection(main_root)
+    if img is None:
+        return
+    threading.Thread(target=do_ocr_translate, args=(img, mode), daemon=True).start()
 
 
 # ---------- 操作选择菜单 ----------
@@ -178,7 +181,7 @@ def show_result_window(mode: str, text: str, translated: str, err_note: str = ""
     make_btn(bar, "复制全部 / Copy All",
              lambda: copy_and("全部 / All", body)).pack(side="left", padx=8)
     make_btn(bar, "↻ 再来一次 / Again",
-             lambda: (win.destroy(), start_pipeline(last_mode["mode"]))).pack(side="left", padx=8)
+             lambda: (win.destroy(), task_queue.put(("action", last_mode["mode"])))).pack(side="left", padx=8)
     make_btn(bar, "关闭 / Close", win.destroy).pack(side="left", padx=8)
 
     status = tk.Label(bar, text="", font=(THEME["font"], 10),
@@ -361,15 +364,15 @@ def make_icon_image() -> Image.Image:
 
 
 def on_translate(_icon, _item):
-    start_pipeline("translate")
+    task_queue.put(("action", "translate"))
 
 
 def on_copy(_icon, _item):
-    start_pipeline("copy")
+    task_queue.put(("action", "copy"))
 
 
 def on_both(_icon, _item):
-    start_pipeline("both")
+    task_queue.put(("action", "both"))
 
 
 def on_settings(_icon, _item):
@@ -438,7 +441,9 @@ def poll_queue():
         if kind == "menu":
             mode = show_mode_menu()
             if mode:
-                start_pipeline(mode)
+                begin_capture(mode)
+        elif kind == "action":
+            begin_capture(payload[0])
         elif kind == "result":
             mode, text, translated, err_note = payload
             show_result_window(mode, text, translated, err_note)
