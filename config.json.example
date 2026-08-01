@@ -1,0 +1,10 @@
+{
+  "ocr_backend": "auto",
+  "api_base_url": "https://api.siliconflow.cn/v1",
+  "vision_model": "Qwen/Qwen3-VL-8B-Instruct",
+  "translate_model": "deepseek-ai/DeepSeek-V3.2",
+  "api_key": "",
+  "tesseract_lang": "chi_sim+eng",
+  "hotkey_ocr": "ctrl+alt+o",
+  "hotkey_translate": "ctrl+alt+t"
+}
