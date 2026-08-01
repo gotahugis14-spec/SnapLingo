@@ -1,11 +1,18 @@
-"""ScreenLingo 入口：托盘常驻 + 全局热键截图 OCR + 英文翻译
+"""ScreenLingo 入口：托盘常驻 + 全局热键截图 OCR + 中英双向翻译
+
+使用流程：
+  按热键（默认 Ctrl+Alt+O）→ 弹出操作选择（翻译 / 复制文字 / 翻译+复制）
+  → 鼠标框选屏幕区域 → 按所选操作执行，结果窗口弹出，文字自动进剪贴板。
 
 线程模型：
-- 主线程：隐藏的 Tk root，负责弹结果窗 / 设置窗 / 剪贴板，poll_queue 轮询结果
+- 主线程：隐藏 Tk root，负责菜单/结果窗/设置窗/剪贴板，poll_queue 轮询
 - pystray：托盘图标线程
-- keyboard：全局热键回调线程，回调里再起线程跑 截图->OCR->翻译
+- keyboard：全局热键回调线程，只向队列投递事件，不碰 UI
+- 工作线程：截图 -> OCR -> (翻译)，结果入队
 """
+import os
 import queue
+import sys
 import threading
 import tkinter as tk
 from tkinter import messagebox, ttk
@@ -21,11 +28,17 @@ import translator
 
 task_queue = queue.Queue()
 exit_flag = {"quit": False}
+last_mode = {"mode": "copy"}
+hotkey_handles = []
+
+AUTOSTART_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
+AUTOSTART_NAME = "ScreenLingo"
 
 
 # ---------- 管道：截图 -> OCR -> (翻译) ----------
 
-def run_pipeline(translate: bool):
+def run_pipeline(mode: str):
+    """后台线程执行。mode: copy / translate / both"""
     try:
         img = snipper.capture_selection()
         if img is None:
@@ -34,35 +47,76 @@ def run_pipeline(translate: bool):
         text = ocr.ocr_image(img, cfg)
         translated = ""
         err_note = ""
-        if translate:
+        if mode in ("translate", "both"):
             try:
-                translated = translator.translate_to_english(text, cfg)
+                translated = translator.translate(text, cfg)
             except Exception as e:
                 # 翻译失败不丢原文：结果窗口仍显示，附失败原因
-                err_note = f"\n\n[翻译失败] {e}"
-        task_queue.put(("result", text, translated, err_note))
+                err_note = f"\n\n[翻译失败 / Translate failed] {e}"
+        task_queue.put(("result", mode, text, translated, err_note))
     except Exception as e:
         task_queue.put(("error", str(e)))
 
 
-def start_pipeline(translate: bool):
-    threading.Thread(target=run_pipeline, args=(translate,), daemon=True).start()
+def start_pipeline(mode: str):
+    last_mode["mode"] = mode
+    threading.Thread(target=run_pipeline, args=(mode,), daemon=True).start()
+
+
+# ---------- 操作选择菜单 ----------
+
+def show_mode_menu() -> str | None:
+    """弹出三选项菜单，返回 copy/translate/both；取消返回 None。阻塞式。"""
+    result = {"mode": None}
+    win = tk.Toplevel(main_root)
+    win.title("ScreenLingo - 选择操作 / Choose Action")
+    win.attributes("-topmost", True)
+    win.resizable(False, False)
+
+    tk.Label(win, text="截图后要做什么？\nWhat to do after capturing?",
+             font=("Microsoft YaHei UI", 12, "bold")).pack(pady=(16, 8))
+
+    def pick(mode):
+        result["mode"] = mode
+        win.destroy()
+
+    btns = [
+        ("🌐 翻译 / Translate", "自动互译中英文", "translate"),
+        ("📋 复制文字 / Copy Text", "只提取文字并复制", "copy"),
+        ("✨ 翻译 + 复制 / Both", "翻译并复制译文", "both"),
+    ]
+    for label, desc, mode in btns:
+        tk.Button(win, text=f"{label}\n{desc}",
+                  font=("Microsoft YaHei UI", 10),
+                  command=lambda m=mode: pick(m), width=34).pack(pady=3)
+    tk.Button(win, text="取消 / Cancel (Esc)", command=win.destroy,
+              width=12).pack(pady=(6, 12))
+    win.bind("<Escape>", lambda _: win.destroy())
+
+    win.update_idletasks()
+    w, h = win.winfo_width(), win.winfo_height()
+    x = (win.winfo_screenwidth() - w) // 2
+    y = (win.winfo_screenheight() - h) // 2
+    win.geometry(f"+{x}+{y}")
+
+    main_root.wait_window(win)
+    return result["mode"]
 
 
 # ---------- 结果窗口 ----------
 
-def show_result_window(text: str, translated: str, err_note: str = ""):
+def show_result_window(mode: str, text: str, translated: str, err_note: str = ""):
     win = tk.Toplevel(main_root)
-    win.title("ScreenLingo - 识别结果")
+    win.title("ScreenLingo - 识别结果 / Result")
     win.attributes("-topmost", True)
-    win.geometry("680x460")
+    win.geometry("720x480")
 
     if translated:
-        body = f"【原文】\n{text}\n\n【英文翻译】\n{translated}"
-    elif err_note:
-        body = f"{text}{err_note}"
+        body = f"【原文 / Original】\n{text}\n\n【译文 / Translation】\n{translated}"
     else:
         body = text
+    if err_note:
+        body += err_note
 
     txt = tk.Text(win, wrap="word", font=("Microsoft YaHei UI", 11))
     txt.insert("1.0", body)
@@ -72,24 +126,38 @@ def show_result_window(text: str, translated: str, err_note: str = ""):
     bar = tk.Frame(win)
     bar.pack(fill="x", padx=8, pady=(0, 8))
 
-    def copy_all():
+    def copy_and(label, s):
         main_root.clipboard_clear()
-        main_root.clipboard_append(body)
-        status.config(text="已复制到剪贴板 ✓", fg="#00a652")
+        main_root.clipboard_append(s)
+        status.config(text=f"已复制：{label} ✓", fg="#00a652")
 
-    tk.Button(bar, text="复制全部", command=copy_all).pack(side="left")
-    tk.Button(bar, text="关闭", command=win.destroy).pack(side="left", padx=6)
+    tk.Button(bar, text="复制原文 / Copy Original",
+              command=lambda: copy_and("原文 / Original", text)).pack(side="left")
+    if translated:
+        tk.Button(bar, text="复制译文 / Copy Translation",
+                  command=lambda: copy_and("译文 / Translation", translated)).pack(side="left", padx=6)
+    tk.Button(bar, text="复制全部 / Copy All",
+              command=lambda: copy_and("全部 / All", body)).pack(side="left", padx=6)
+    tk.Button(bar, text="↻ 再来一次 / Again",
+              command=lambda: (win.destroy(), start_pipeline(last_mode["mode"]))).pack(side="left", padx=6)
+    tk.Button(bar, text="关闭 / Close", command=win.destroy).pack(side="left", padx=6)
     status = tk.Label(bar, text="", fg="#00a652")
     status.pack(side="left", padx=10)
+
+    # 自动复制：翻译相关模式复制译文，否则复制原文
+    if translated:
+        copy_and("译文 / Translation", translated)
+    else:
+        copy_and("原文 / Original", text)
 
 
 # ---------- 设置窗口 ----------
 
 def show_settings():
     win = tk.Toplevel(main_root)
-    win.title("ScreenLingo - 设置")
+    win.title("ScreenLingo - 设置 / Settings")
     win.attributes("-topmost", True)
-    win.geometry("440x320")
+    win.geometry("480x400")
     cfg = config.load()
 
     rows = tk.Frame(win)
@@ -98,13 +166,16 @@ def show_settings():
     def add_row(label, widget):
         f = tk.Frame(rows)
         f.pack(fill="x", pady=4)
-        tk.Label(f, text=label, width=12, anchor="w").pack(side="left")
+        tk.Label(f, text=label, width=14, anchor="w").pack(side="left")
         widget.pack(side="left", fill="x", expand=True)
 
     backend_var = tk.StringVar(value=cfg.get("ocr_backend", "auto"))
     add_row("OCR 后端", ttk.Combobox(rows, textvariable=backend_var,
                                      values=["auto", "tesseract", "api"],
                                      state="readonly"))
+
+    hotkey_var = tk.StringVar(value=cfg.get("hotkey_menu", "ctrl+alt+o"))
+    add_row("全局快捷键", tk.Entry(rows, textvariable=hotkey_var))
 
     key_var = tk.StringVar(value=config.get_api_key(cfg))
     add_row("API Key", tk.Entry(rows, textvariable=key_var, show="*"))
@@ -115,22 +186,72 @@ def show_settings():
     trans_var = tk.StringVar(value=cfg.get("translate_model", ""))
     add_row("翻译模型", tk.Entry(rows, textvariable=trans_var))
 
+    autostart_var = tk.BooleanVar(value=is_autostart_enabled())
+    add_row("开机自启", tk.Checkbutton(rows, variable=autostart_var))
+
     tk.Label(
         rows,
-        text="提示：Key 留空则使用环境变量 SILICONFLOW_API_KEY。\n"
-             "OCR 后端 auto = 有 Tesseract 用本地，否则用 API。",
+        text="快捷键格式示例：ctrl+alt+o / alt+shift+k / f8\n"
+             "Key 留空则使用环境变量 SILICONFLOW_API_KEY。\n"
+             "保存后快捷键立即生效，无需重启。",
         fg="#888", justify="left").pack(anchor="w", pady=8)
 
     def save():
+        new_hotkey = hotkey_var.get().strip()
+        if new_hotkey:
+            cfg["hotkey_menu"] = new_hotkey
         cfg["ocr_backend"] = backend_var.get()
         cfg["api_key"] = key_var.get().strip()
         cfg["vision_model"] = vision_var.get().strip()
         cfg["translate_model"] = trans_var.get().strip()
         config.save(cfg)
+        set_autostart(autostart_var.get())
+        rebind_hotkeys(cfg)
         win.destroy()
-        messagebox.showinfo("ScreenLingo", "设置已保存。", parent=main_root)
+        messagebox.showinfo("ScreenLingo", "设置已保存，快捷键已生效。\nSettings saved.", parent=main_root)
 
-    tk.Button(rows, text="保存", command=save, width=10).pack(anchor="e")
+    tk.Button(rows, text="保存 / Save", command=save, width=10).pack(anchor="e")
+
+
+# ---------- 开机自启（注册表） ----------
+
+def autostart_command() -> str:
+    if getattr(sys, "frozen", False):
+        return f'"{sys.executable}"'
+    return f'"{sys.executable}" "{os.path.abspath(__file__)}"'
+
+
+def set_autostart(enabled: bool):
+    try:
+        import winreg
+        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, AUTOSTART_KEY,
+                             0, winreg.KEY_SET_VALUE)
+        if enabled:
+            winreg.SetValueEx(key, AUTOSTART_NAME, 0, winreg.REG_SZ,
+                              autostart_command())
+        else:
+            try:
+                winreg.DeleteValue(key, AUTOSTART_NAME)
+            except FileNotFoundError:
+                pass
+        winreg.CloseKey(key)
+    except Exception as e:
+        messagebox.showerror("ScreenLingo", f"设置开机自启失败：\n{e}",
+                             parent=main_root)
+
+
+def is_autostart_enabled() -> bool:
+    try:
+        import winreg
+        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, AUTOSTART_KEY,
+                             0, winreg.KEY_READ)
+        winreg.QueryValueEx(key, AUTOSTART_NAME)
+        winreg.CloseKey(key)
+        return True
+    except FileNotFoundError:
+        return False
+    except Exception:
+        return False
 
 
 # ---------- 托盘 ----------
@@ -144,12 +265,16 @@ def make_icon_image() -> Image.Image:
     return img
 
 
-def on_ocr(_icon, _item):
-    start_pipeline(False)
-
-
 def on_translate(_icon, _item):
-    start_pipeline(True)
+    start_pipeline("translate")
+
+
+def on_copy(_icon, _item):
+    start_pipeline("copy")
+
+
+def on_both(_icon, _item):
+    start_pipeline("both")
 
 
 def on_settings(_icon, _item):
@@ -158,21 +283,53 @@ def on_settings(_icon, _item):
 
 def on_quit(_icon, _item):
     exit_flag["quit"] = True
-    keyboard.unhook_all()
+    for h in hotkey_handles:
+        try:
+            keyboard.remove_hotkey(h)
+        except Exception:
+            pass
     icon.stop()
     main_root.after(0, main_root.destroy)
 
 
 def setup_icon() -> pystray.Icon:
     menu = pystray.Menu(
-        pystray.MenuItem("截图识别并复制  (Ctrl+Alt+O)", on_ocr),
-        pystray.MenuItem("截图识别并翻译成英文  (Ctrl+Alt+T)", on_translate),
-        pystray.MenuItem("设置…", on_settings),
+        pystray.MenuItem("🌐 翻译 / Translate", on_translate),
+        pystray.MenuItem("📋 复制文字 / Copy Text", on_copy),
+        pystray.MenuItem("✨ 翻译+复制 / Both", on_both),
         pystray.Menu.SEPARATOR,
-        pystray.MenuItem("退出", on_quit),
+        pystray.MenuItem("设置… / Settings", on_settings),
+        pystray.Menu.SEPARATOR,
+        pystray.MenuItem("退出 / Quit", on_quit),
     )
     return pystray.Icon("ScreenLingo", make_icon_image(),
-                        "ScreenLingo - 截图OCR + 英文翻译", menu)
+                        "ScreenLingo - 截图OCR + 中英互译", menu)
+
+
+# ---------- 全局热键 ----------
+
+def on_menu_hotkey():
+    # keyboard 回调线程：只投递事件，UI 由主线程处理
+    task_queue.put(("menu",))
+
+
+def rebind_hotkeys(cfg: dict):
+    """先解绑旧热键，再注册新热键。保存设置后立即生效。"""
+    global hotkey_handles
+    for h in hotkey_handles:
+        try:
+            keyboard.remove_hotkey(h)
+        except Exception:
+            pass
+    hotkey_handles = []
+    hotkey = cfg.get("hotkey_menu", "ctrl+alt+o")
+    try:
+        hotkey_handles.append(keyboard.add_hotkey(hotkey, on_menu_hotkey))
+    except Exception as e:
+        messagebox.showerror(
+            "ScreenLingo",
+            f"注册全局热键失败（格式错误或需要管理员权限）：\n{e}",
+            parent=main_root)
 
 
 # ---------- 主循环 ----------
@@ -183,11 +340,13 @@ def poll_queue():
             kind, *payload = task_queue.get_nowait()
         except queue.Empty:
             break
-        if kind == "result":
-            text, translated, err_note = payload
-            main_root.clipboard_clear()
-            main_root.clipboard_append(translated if translated else text)
-            show_result_window(text, translated, err_note)
+        if kind == "menu":
+            mode = show_mode_menu()
+            if mode:
+                start_pipeline(mode)
+        elif kind == "result":
+            mode, text, translated, err_note = payload
+            show_result_window(mode, text, translated, err_note)
         elif kind == "error":
             messagebox.showerror("ScreenLingo", str(payload[0]), parent=main_root)
     if not exit_flag["quit"]:
@@ -200,16 +359,7 @@ def main():
     main_root.withdraw()
 
     cfg = config.load()
-    try:
-        keyboard.add_hotkey(cfg.get("hotkey_ocr", "ctrl+alt+o"),
-                            lambda: start_pipeline(False))
-        keyboard.add_hotkey(cfg.get("hotkey_translate", "ctrl+alt+t"),
-                            lambda: start_pipeline(True))
-    except Exception as e:
-        messagebox.showerror(
-            "ScreenLingo",
-            f"注册全局热键失败（可能需要管理员权限运行）：\n{e}",
-            parent=main_root)
+    rebind_hotkeys(cfg)
 
     icon = setup_icon()
     icon.run_detached()

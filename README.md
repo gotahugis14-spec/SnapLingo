@@ -1,95 +1,200 @@
-# 🎯 ScreenLingo — 截图即得：OCR 文字提取 + 一键英文翻译
+# 🎯 ScreenLingo · 截图文字提取 + 中英互译
+### Screenshot OCR + Chinese ⇄ English Translation, one global hotkey away
 
-> **按下热键，框选屏幕任意区域，文字自动进剪贴板；再按另一个键，直接拿到英文翻译。**
-> 看英文文献、截图文档、提取网页/视频里的文字——从此不用再手敲一个字。
+[English](#english-overview) | [中文](#中文总览)
 
-![platform](https://img.shields.io/badge/platform-Windows-0078d6) ![python](https://img.shields.io/badge/python-3.10%2B-3776ab) ![license](https://img.shields.io/badge/license-MIT-green) ![size](https://img.shields.io/badge/size-%3E10KB-blue)
+![platform](https://img.shields.io/badge/platform-Windows-0078d6) ![python](https://img.shields.io/badge/python-3.10%2B-3776ab) ![license](https://img.shields.io/badge/license-MIT-green) ![size](https://img.shields.io/badge/exe-23MB-blue)
 
 ---
 
-## ✨ 它解决什么问题
+## 中文总览
 
-| 场景 | 以前 | 用 ScreenLingo |
-|---|---|---|
-| 网页/PDF 文字不能复制 | 截图 → 打开 OCR 网站 → 下载图片 → 上传 → 复制 | 热键框选 → 文字已在剪贴板，**2 秒** |
-| 英文文章/论文看不懂 | 逐句复制 → 贴进翻译网站 | 热键框选 → 原文+英文翻译同时到手 |
-| 视频/图片里的字幕 | 一帧一帧截图手打 | 框选即得 |
+### 📖 这是什么？(给 1 分钟了解它)
 
-## 🚀 快速开始
+**ScreenLingo 是一个常驻后台的 Windows 小工具**：无论你在浏览器、PDF、视频还是任何软件里，只要按一下快捷键，框选屏幕上的任意文字区域，它就会：
 
-### 方式一：直接下载 exe（推荐，无需 Python）
-去 [Releases](../../releases) 下载 `ScreenLingo.exe`，双击运行，托盘出现图标即可用。
+| 你要做的操作 | 得到的结果 |
+|---|---|
+| 🌐 **翻译** | 自动识别中英文并互译（中文 → 英文，英文 → 中文） |
+| 📋 **复制文字** | 只提取文字，直接进剪贴板 |
+| ✨ **翻译 + 复制** | 翻译结果直接进剪贴板 |
 
-### 方式二：源码运行
+从此：网页文字不能复制？截图框一下就出来了。英文论文看不懂？框一下就翻译好了。视频字幕想记录？框一下就复制了。
+
+### 🚀 快速开始（3 步，小白版）
+
+**第 1 步：拿到程序**
+
+- 方式 A（推荐，最简单）：到 [Releases](../../releases) 页面下载 `ScreenLingo.exe`，或者直接双击项目文件夹里的 `ScreenLingo.exe`
+- 方式 B：自己从源码运行，见下方 [从源码运行](#从源码运行)
+
+**第 2 步：启动**
+
+双击 `ScreenLingo.exe`。屏幕右下角任务栏（托盘区）出现一个**绿色相机图标**，说明它在后台待命了。**看不到图标？** 点击任务栏右侧的 `^`（显示隐藏图标）就能看到。
+
+**第 3 步：使用**
+
+1. 按下全局快捷键 `Ctrl + Alt + O`
+2. 屏幕出现半透明遮罩，鼠标**拖拽框选**你要识别的区域，松开鼠标
+3. 弹出三个选项：🌐 翻译 / 📋 复制文字 / ✨ 翻译+复制，点一个
+4. 结果窗口弹出，文字**已经自动复制到剪贴板**，直接 `Ctrl + V` 粘贴即可
+
+> 💡 第一次使用如果提示"未配置 API key"，请看下方 [配置 API key](#配置-api-key)。
+
+### 🎨 快捷键（可以换绑！）
+
+默认快捷键：`Ctrl + Alt + O`（打开操作菜单）。
+
+**想换成别的键？** 很简单：
+
+1. 右键托盘图标 → 「设置…」
+2. 在「全局快捷键」一栏输入新组合，例如：`alt+shift+k`、`f8`、`ctrl+alt+c`
+3. 点「保存」——**立即生效，不用重启**
+
+### ⚙️ 配置
+
+右键托盘图标 → 「设置…」，可以改：
+
+| 配置项 | 说明 |
+|---|---|
+| OCR 后端 | `auto`（默认，自动选择）/ `tesseract`（本地离线）/ `api`（云端，最准） |
+| 全局快捷键 | 见上方，随时换绑 |
+| API Key | 云端识别/翻译的密钥（也可以放环境变量） |
+| 视觉模型 / 翻译模型 | 默认已配好 SiliconFlow 的模型，一般不用改 |
+| 开机自启 | 勾选后开机自动运行，真正"挂在后台" |
+
+配置文件位置：`%APPDATA%\ScreenLingo\config.json`
+
+#### 配置 API key
+
+ScreenLingo 默认使用 [SiliconFlow](https://siliconflow.cn) 的 OpenAI 兼容接口（免费注册即有额度）。两种方式配置：
+
+```bash
+# 方式一：环境变量（推荐，最安全，key 不会存进文件）
+set SILICONFLOW_API_KEY=sk-你的key
+```
+
+```jsonc
+// 方式二：编辑 %APPDATA%\ScreenLingo\config.json
+{ "api_key": "sk-你的key" }
+```
+
+也可以用任意 OpenAI 兼容服务：改 `api_base_url` 和模型名即可。
+
+### 🏗️ 从源码运行
+
 ```bash
 pip install -r requirements.txt
 python main.py
 ```
 
-## 🕹️ 使用
+需要 Python 3.10+（Windows 官方安装包：python.org）
 
-| 操作 | 快捷键 |
-|---|---|
-| 截图识别并复制文字 | `Ctrl + Alt + O` |
-| 截图识别 + 翻译成英文 | `Ctrl + Alt + T` |
-| 取消框选 | `Esc` |
-
-1. 按下快捷键，屏幕出现遮罩
-2. 鼠标拖拽框选目标区域，松开
-3. 结果窗口弹出，文字已自动复制到剪贴板 ✅
-
-## ⚙️ 配置 OCR 后端
-
-支持三种后端，`config.json` 或托盘"设置"里切换（配置文件在 `%APPDATA%\ScreenLingo\`）：
-
-| 后端 | 说明 | 需要什么 |
-|---|---|---|
-| `auto`（默认） | 检测到 Tesseract 用本地，否则走 API | 无 |
-| `tesseract` | 本地离线识别，免费 | 安装 [Tesseract](https://github.com/UB-Mannheim/tesseract/wiki) + 中文语言包 `chi_sim` |
-| `api` | OpenAI 兼容视觉模型，中文/复杂版面准确率最高 | 任意 OpenAI 兼容 API 的 key |
-
-**配置 API key（二选一）：**
-```bash
-# 方式一：环境变量（推荐，安全）
-set SILICONFLOW_API_KEY=sk-xxx
-
-# 方式二：编辑 %APPDATA%\ScreenLingo\config.json
-{"api_key": "sk-xxx"}
-```
-
-默认使用 [SiliconFlow](https://siliconflow.cn) 的 OpenAI 兼容接口（视觉模型 `Qwen/Qwen3-VL-8B-Instruct`，翻译模型 `deepseek-ai/DeepSeek-V3.2`），换成任意兼容服务只需改 `api_base_url` 和模型名。
-
-## 🏗️ 项目结构
-
-```
-ScreenLingo/
-├── main.py          # 入口：托盘 + 全局热键 + 结果窗口
-├── snipper.py       # 全屏遮罩 + 鼠标框选截图
-├── ocr.py           # OCR 后端：tesseract / api
-├── translator.py    # 英文翻译（OpenAI 兼容）
-├── config.py        # 配置读写（%APPDATA%/ScreenLingo/config.json）
-├── build.bat        # 一键打包 exe
-└── requirements.txt
-```
-
-## 🧱 打包成 exe（给别人用）
+### 📦 自己打包 exe
 
 ```bash
 build.bat
-# 产物在 dist\ScreenLingo.exe，拷到任何 Windows 电脑都能跑
 ```
 
-## ❓ 常见问题
+脚本会自动创建干净构建环境、装依赖、打包，产物在 `dist\ScreenLingo.exe`（约 23MB）。拷到任何 Windows 电脑都能直接运行。
 
-- **热键没反应？** 右键托盘图标，或尝试以管理员身份运行（部分软件会拦截全局热键）。
-- **提示未配置 API key？** 按上面"配置 API key"两步操作，然后重新框选。
-- **Tesseract 识别中文乱码？** 确认安装了 `chi_sim.traineddata` 语言包，并重启程序。
-- **exe 被杀毒软件误报？** 本项目完全开源，代码可自查；这是 PyInstaller 打包的常见误报。
+### 🧱 项目结构
 
-## 📄 License
+```
+ScreenLingo/
+├── main.py          # 入口：托盘 + 全局热键 + 三选项菜单 + 结果窗口
+├── snipper.py       # 全屏遮罩 + 鼠标框选截图
+├── ocr.py           # OCR 后端：tesseract（本地）/ api（云端）
+├── translator.py    # 中英互译（自动检测语言）
+├── config.py        # 配置读写（%APPDATA%/ScreenLingo/config.json）
+├── build.bat        # 一键打包 exe（自动建 venv）
+└── requirements.txt
+```
 
-[MIT](LICENSE) — 随便用，注明出处即可。
+### ❓ 常见问题（FAQ）
 
-## ⭐ 支持
+**Q：按快捷键没反应？**
+A：先确认托盘有绿色图标。如果被其他软件占用了热键，到设置里换一个组合键。仍不行就右键托盘图标 → 退出，然后**以管理员身份**重新运行。
 
-如果它帮你省了时间，点个 Star 就是最大的支持 ❤️
+**Q：提示"未配置 API key"？**
+A：按上方 [配置 API key](#配置-api-key) 配置后重新框选。纯本地用户可把 OCR 后端切到 `tesseract`（需自行安装 Tesseract 和中文语言包 chi_sim）。
+
+**Q：翻译出来不对 / 想要指定翻译方向？**
+A：ScreenLingo 按文字内容自动判断：有中文字符就翻成英文，否则翻成中文。
+
+**Q：exe 被杀毒软件报毒？**
+A：这是 PyInstaller 打包程序的常见误报。本项目完全开源，代码可自查；添加信任即可。
+
+**Q：多显示器能用吗？**
+A：v0.2 支持主显示器框选；多显示器适配在规划中。
+
+### 📄 License
+
+[MIT](LICENSE) — 随意使用，注明出处即可。
+
+### ⭐ 支持
+
+觉得好用就点个 Star 吧，这是开源作者最大的动力 ❤️
+
+---
+
+## English Overview
+
+### 📖 What is it?
+
+**ScreenLingo is a background Windows utility**: press a global hotkey, drag-select any text on your screen (in a browser, PDF, video, any app), and it will:
+
+| Action | Result |
+|---|---|
+| 🌐 **Translate** | Auto-detect language and translate between Chinese and English |
+| 📋 **Copy Text** | Extract the text and copy it to clipboard |
+| ✨ **Both** | Translate and copy the result |
+
+### 🚀 Quick Start (3 steps)
+
+1. **Get the app**: download `ScreenLingo.exe` from [Releases](../../releases) (or double-click the one in the project folder)
+2. **Run it**: double-click the exe — a green camera icon appears in the system tray (click `^` if hidden)
+3. **Use it**: press `Ctrl + Alt + O` → drag-select the area → choose an action (Translate / Copy / Both) → result is **already in your clipboard**, just paste with `Ctrl + V`
+
+### 🎨 Hotkey (rebindable!)
+
+Default: `Ctrl + Alt + O`. Rebind anytime: right-click tray icon → **Settings** → enter a new combo (e.g. `alt+shift+k`, `f8`) → **Save**. It takes effect immediately — no restart needed.
+
+### ⚙️ Configuration
+
+Right-click the tray icon → **Settings**:
+- **OCR backend**: `auto` (default) / `tesseract` (local, offline) / `api` (cloud, most accurate)
+- **API Key**: for cloud OCR/translation (or use env var `SILICONFLOW_API_KEY`)
+- **Vision/Translate model**: preconfigured for SiliconFlow, usually no need to change
+- **Autostart**: run at Windows startup
+
+Config file: `%APPDATA%\ScreenLingo\config.json`
+
+### 🏗️ Run from source
+
+```bash
+pip install -r requirements.txt
+python main.py
+```
+
+### 📦 Build your own exe
+
+```bash
+build.bat
+```
+
+Output: `dist\ScreenLingo.exe` (~23 MB), runs on any Windows PC without Python.
+
+### ❓ FAQ
+
+- **Hotkey not working?** Make sure the tray icon is there. If another app grabbed the key, rebind in Settings. Still stuck? Quit via tray menu and re-run **as administrator**.
+- **"No API key configured"?** Configure it as above, or switch OCR backend to `tesseract` (install Tesseract + `chi_sim` language pack).
+- **Antivirus false positive?** Common for PyInstaller builds. The whole project is open source — check the code yourself and add an exception.
+
+### 📄 License
+
+[MIT](LICENSE)
+
+### ⭐ Support
+
+If this saves you time, a Star means a lot ❤️

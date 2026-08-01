@@ -5,6 +5,5 @@
   "translate_model": "deepseek-ai/DeepSeek-V3.2",
   "api_key": "",
   "tesseract_lang": "chi_sim+eng",
-  "hotkey_ocr": "ctrl+alt+o",
-  "hotkey_translate": "ctrl+alt+t"
+  "hotkey_menu": "ctrl+alt+o"
 }

@@ -11,8 +11,7 @@ DEFAULTS = {
     "translate_model": "deepseek-ai/DeepSeek-V3.2",
     "api_key": "",           # 也可用环境变量 SILICONFLOW_API_KEY
     "tesseract_lang": "chi_sim+eng",
-    "hotkey_ocr": "ctrl+alt+o",
-    "hotkey_translate": "ctrl+alt+t",
+    "hotkey_menu": "ctrl+alt+o",  # 全局热键：弹操作菜单
 }
 
 
@@ -29,13 +28,18 @@ def config_path() -> str:
 
 def load() -> dict:
     cfg = dict(DEFAULTS)
+    raw = {}
     try:
         with open(config_path(), "r", encoding="utf-8") as f:
-            cfg.update(json.load(f))
+            raw = json.load(f)
     except FileNotFoundError:
         pass
     except Exception as e:
         print(f"[ScreenLingo] 读取配置失败，使用默认配置: {e}")
+    cfg.update(raw)
+    # 迁移：v0.1 的两个热键合并为 v0.2 的单个 hotkey_menu
+    if "hotkey_menu" not in raw and raw.get("hotkey_ocr"):
+        cfg["hotkey_menu"] = raw["hotkey_ocr"]
     return cfg
 
 
