@@ -34,6 +34,32 @@ hotkey_handles = []
 AUTOSTART_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 AUTOSTART_NAME = "ScreenLingo"
 
+# ---------- UI 主题 ----------
+THEME = {
+    "bg": "#f4f6f8",
+    "card": "#ffffff",
+    "accent": "#00c853",
+    "accent_dark": "#00a544",
+    "text": "#1f2937",
+    "muted": "#6b7280",
+    "border": "#e5e7eb",
+    "font": "Microsoft YaHei UI",
+}
+
+
+def make_btn(parent, text, command, *, size=11, bg=None, fg=None, bold=False,
+             padx=16, pady=8, width=None):
+    """统一样式的按钮"""
+    return tk.Button(
+        parent, text=text, command=command,
+        font=(THEME["font"], size, "bold" if bold else "normal"),
+        bg=bg or THEME["card"], fg=fg or THEME["text"],
+        activebackground="#e6f7ec" if bg is None else bg,
+        activeforeground=THEME["text"],
+        relief="flat", bd=0, padx=padx, pady=pady,
+        cursor="hand2", highlightthickness=1,
+        highlightbackground=THEME["border"], width=width)
+
 
 # ---------- 管道：截图 -> OCR -> (翻译) ----------
 
@@ -70,27 +96,38 @@ def show_mode_menu() -> str | None:
     result = {"mode": None}
     win = tk.Toplevel(main_root)
     win.title("ScreenLingo - 选择操作 / Choose Action")
+    win.configure(bg=THEME["bg"])
     win.attributes("-topmost", True)
     win.resizable(False, False)
 
-    tk.Label(win, text="截图后要做什么？\nWhat to do after capturing?",
-             font=("Microsoft YaHei UI", 12, "bold")).pack(pady=(16, 8))
+    tk.Label(win, text="截图后要做什么？", font=(THEME["font"], 16, "bold"),
+             bg=THEME["bg"], fg=THEME["text"]).pack(pady=(26, 2))
+    tk.Label(win, text="What do you want to do?", font=(THEME["font"], 10),
+             bg=THEME["bg"], fg=THEME["muted"]).pack(pady=(0, 18))
 
     def pick(mode):
         result["mode"] = mode
         win.destroy()
 
     btns = [
-        ("🌐 翻译 / Translate", "自动互译中英文", "translate"),
-        ("📋 复制文字 / Copy Text", "只提取文字并复制", "copy"),
-        ("✨ 翻译 + 复制 / Both", "翻译并复制译文", "both"),
+        ("🌐  翻译 / Translate", "自动互译中英文", "translate"),
+        ("📋  复制文字 / Copy Text", "只提取文字并复制", "copy"),
+        ("✨  翻译 + 复制 / Both", "翻译并复制译文", "both"),
     ]
-    for label, desc, mode in btns:
-        tk.Button(win, text=f"{label}\n{desc}",
-                  font=("Microsoft YaHei UI", 10),
-                  command=lambda m=mode: pick(m), width=34).pack(pady=3)
-    tk.Button(win, text="取消 / Cancel (Esc)", command=win.destroy,
-              width=12).pack(pady=(6, 12))
+    for main_txt, sub_txt, mode in btns:
+        tk.Button(
+            win, text=f"{main_txt}\n{sub_txt}",
+            font=(THEME["font"], 13),
+            bg=THEME["card"], fg=THEME["text"],
+            activebackground="#e6f7ec",
+            relief="flat", bd=0, width=38, pady=12,
+            cursor="hand2", highlightthickness=1,
+            highlightbackground=THEME["border"],
+            command=lambda m=mode: pick(m)).pack(pady=6)
+
+    tk.Button(win, text="取消 / Cancel  (Esc)", command=win.destroy,
+              font=(THEME["font"], 10), bg=THEME["bg"], fg=THEME["muted"],
+              relief="flat", bd=0, cursor="hand2").pack(pady=(12, 18))
     win.bind("<Escape>", lambda _: win.destroy())
 
     win.update_idletasks()
@@ -98,7 +135,6 @@ def show_mode_menu() -> str | None:
     x = (win.winfo_screenwidth() - w) // 2
     y = (win.winfo_screenheight() - h) // 2
     win.geometry(f"+{x}+{y}")
-
     main_root.wait_window(win)
     return result["mode"]
 
@@ -108,8 +144,9 @@ def show_mode_menu() -> str | None:
 def show_result_window(mode: str, text: str, translated: str, err_note: str = ""):
     win = tk.Toplevel(main_root)
     win.title("ScreenLingo - 识别结果 / Result")
+    win.configure(bg=THEME["bg"])
     win.attributes("-topmost", True)
-    win.geometry("720x480")
+    win.geometry("920x660")
 
     if translated:
         body = f"【原文 / Original】\n{text}\n\n【译文 / Translation】\n{translated}"
@@ -118,31 +155,35 @@ def show_result_window(mode: str, text: str, translated: str, err_note: str = ""
     if err_note:
         body += err_note
 
-    txt = tk.Text(win, wrap="word", font=("Microsoft YaHei UI", 11))
+    txt = tk.Text(win, wrap="word", font=(THEME["font"], 12),
+                  bg=THEME["card"], fg=THEME["text"],
+                  relief="flat", bd=0, padx=14, pady=12)
     txt.insert("1.0", body)
     txt.configure(state="disabled")
-    txt.pack(fill="both", expand=True, padx=8, pady=8)
+    txt.pack(fill="both", expand=True, padx=14, pady=(14, 8))
 
-    bar = tk.Frame(win)
-    bar.pack(fill="x", padx=8, pady=(0, 8))
+    bar = tk.Frame(win, bg=THEME["bg"])
+    bar.pack(fill="x", padx=14, pady=(0, 14))
 
     def copy_and(label, s):
         main_root.clipboard_clear()
         main_root.clipboard_append(s)
-        status.config(text=f"已复制：{label} ✓", fg="#00a652")
+        status.config(text=f"已复制：{label} ✓", fg=THEME["accent_dark"])
 
-    tk.Button(bar, text="复制原文 / Copy Original",
-              command=lambda: copy_and("原文 / Original", text)).pack(side="left")
+    make_btn(bar, "复制原文 / Copy Original",
+             lambda: copy_and("原文 / Original", text)).pack(side="left")
     if translated:
-        tk.Button(bar, text="复制译文 / Copy Translation",
-                  command=lambda: copy_and("译文 / Translation", translated)).pack(side="left", padx=6)
-    tk.Button(bar, text="复制全部 / Copy All",
-              command=lambda: copy_and("全部 / All", body)).pack(side="left", padx=6)
-    tk.Button(bar, text="↻ 再来一次 / Again",
-              command=lambda: (win.destroy(), start_pipeline(last_mode["mode"]))).pack(side="left", padx=6)
-    tk.Button(bar, text="关闭 / Close", command=win.destroy).pack(side="left", padx=6)
-    status = tk.Label(bar, text="", fg="#00a652")
-    status.pack(side="left", padx=10)
+        make_btn(bar, "复制译文 / Copy Translation",
+                 lambda: copy_and("译文 / Translation", translated)).pack(side="left", padx=8)
+    make_btn(bar, "复制全部 / Copy All",
+             lambda: copy_and("全部 / All", body)).pack(side="left", padx=8)
+    make_btn(bar, "↻ 再来一次 / Again",
+             lambda: (win.destroy(), start_pipeline(last_mode["mode"]))).pack(side="left", padx=8)
+    make_btn(bar, "关闭 / Close", win.destroy).pack(side="left", padx=8)
+
+    status = tk.Label(bar, text="", font=(THEME["font"], 10),
+                      fg=THEME["accent_dark"], bg=THEME["bg"])
+    status.pack(side="left", padx=12)
 
     # 自动复制：翻译相关模式复制译文，否则复制原文
     if translated:
@@ -156,45 +197,96 @@ def show_result_window(mode: str, text: str, translated: str, err_note: str = ""
 def show_settings():
     win = tk.Toplevel(main_root)
     win.title("ScreenLingo - 设置 / Settings")
+    win.configure(bg=THEME["bg"])
     win.attributes("-topmost", True)
-    win.geometry("480x400")
+    win.geometry("600x560")
+    win.resizable(False, False)
     cfg = config.load()
 
-    rows = tk.Frame(win)
-    rows.pack(fill="both", expand=True, padx=12, pady=12)
+    tk.Label(win, text="设置 / Settings", font=(THEME["font"], 16, "bold"),
+             bg=THEME["bg"], fg=THEME["text"]).pack(pady=(22, 6), padx=28, anchor="w")
 
-    def add_row(label, widget):
-        f = tk.Frame(rows)
-        f.pack(fill="x", pady=4)
-        tk.Label(f, text=label, width=14, anchor="w").pack(side="left")
-        widget.pack(side="left", fill="x", expand=True)
+    body = tk.Frame(win, bg=THEME["bg"])
+    body.pack(fill="both", expand=True, padx=28)
+    body.grid_columnconfigure(1, weight=1)
 
+    def add_row(row, label, widget):
+        tk.Label(body, text=label, font=(THEME["font"], 11), bg=THEME["bg"],
+                 fg=THEME["text"], anchor="w").grid(
+            row=row, column=0, sticky="w", padx=(0, 16), pady=9)
+        widget.grid(row=row, column=1, sticky="ew", pady=9)
+
+    def make_entry(var):
+        return tk.Entry(body, textvariable=var, font=(THEME["font"], 11),
+                        relief="solid", bd=1, highlightthickness=1,
+                        highlightbackground=THEME["border"])
+
+    # OCR 后端
     backend_var = tk.StringVar(value=cfg.get("ocr_backend", "auto"))
-    add_row("OCR 后端", ttk.Combobox(rows, textvariable=backend_var,
-                                     values=["auto", "tesseract", "api"],
-                                     state="readonly"))
+    combo = ttk.Combobox(body, textvariable=backend_var,
+                         values=["auto", "tesseract", "api"], state="readonly")
+    add_row(0, "OCR 后端", combo)
 
+    # 全局快捷键
     hotkey_var = tk.StringVar(value=cfg.get("hotkey_menu", "ctrl+alt+o"))
-    add_row("全局快捷键", tk.Entry(rows, textvariable=hotkey_var))
+    add_row(1, "全局快捷键", make_entry(hotkey_var))
 
+    # API Key + 小眼睛（点击切换明文/密文）
     key_var = tk.StringVar(value=config.get_api_key(cfg))
-    add_row("API Key", tk.Entry(rows, textvariable=key_var, show="*"))
+    key_frame = tk.Frame(body, bg=THEME["bg"])
+    key_entry = tk.Entry(key_frame, textvariable=key_var, show="*",
+                         font=(THEME["font"], 11), relief="solid", bd=1,
+                         highlightthickness=1, highlightbackground=THEME["border"])
+    key_entry.pack(side="left", fill="x", expand=True)
+    key_state = {"shown": False}
 
+    def toggle_eye():
+        key_state["shown"] = not key_state["shown"]
+        key_entry.config(show="" if key_state["shown"] else "*")
+        eye_btn.config(text="🙈" if key_state["shown"] else "👁")
+
+    eye_btn = tk.Button(key_frame, text="👁", command=toggle_eye,
+                        font=(THEME["font"], 13), relief="flat", bd=0,
+                        bg=THEME["bg"], cursor="hand2",
+                        activebackground=THEME["bg"])
+    eye_btn.pack(side="left", padx=(8, 0))
+    add_row(2, "API Key", key_frame)
+
+    # API Key 获取指引链接
+    def open_ak_page():
+        import webbrowser
+        webbrowser.open("https://cloud.siliconflow.cn/account/ak")
+
+    link = tk.Label(body, text="🔑 不知道 API Key 是什么 / 在哪获取？点这里看步骤",
+                    font=(THEME["font"], 10), fg="#2563eb", bg=THEME["bg"],
+                    cursor="hand2")
+    link.grid(row=3, column=1, sticky="w", pady=(0, 4))
+    link.bind("<Button-1>", lambda _: open_ak_page())
+
+    # 分隔线
+    tk.Frame(body, bg=THEME["border"], height=1).grid(
+        row=4, column=0, columnspan=2, sticky="ew", pady=12)
+
+    # 进阶选项
     vision_var = tk.StringVar(value=cfg.get("vision_model", ""))
-    add_row("视觉模型", tk.Entry(rows, textvariable=vision_var))
-
+    add_row(5, "视觉模型", make_entry(vision_var))
     trans_var = tk.StringVar(value=cfg.get("translate_model", ""))
-    add_row("翻译模型", tk.Entry(rows, textvariable=trans_var))
-
+    add_row(6, "翻译模型", make_entry(trans_var))
     autostart_var = tk.BooleanVar(value=is_autostart_enabled())
-    add_row("开机自启", tk.Checkbutton(rows, variable=autostart_var))
+    add_row(7, "开机自启", tk.Checkbutton(body, variable=autostart_var,
+                                          bg=THEME["bg"], activebackground=THEME["bg"]))
 
-    tk.Label(
-        rows,
-        text="快捷键格式示例：ctrl+alt+o / alt+shift+k / f8\n"
-             "Key 留空则使用环境变量 SILICONFLOW_API_KEY。\n"
-             "保存后快捷键立即生效，无需重启。",
-        fg="#888", justify="left").pack(anchor="w", pady=8)
+    tk.Label(body,
+             text="快捷键格式示例：ctrl+alt+o / alt+shift+k / f8\n"
+                  "API Key 留空则使用环境变量 SILICONFLOW_API_KEY。\n"
+                  "点「确定」后设置立即生效，无需重启。",
+             font=(THEME["font"], 9), fg=THEME["muted"], bg=THEME["bg"],
+             justify="left").grid(row=8, column=0, columnspan=2, sticky="w",
+                                  pady=(6, 4))
+
+    # 右下角确定按钮：点按才保存并生效
+    footer = tk.Frame(win, bg=THEME["bg"])
+    footer.pack(fill="x", padx=28, pady=(0, 22))
 
     def save():
         new_hotkey = hotkey_var.get().strip()
@@ -208,9 +300,12 @@ def show_settings():
         set_autostart(autostart_var.get())
         rebind_hotkeys(cfg)
         win.destroy()
-        messagebox.showinfo("ScreenLingo", "设置已保存，快捷键已生效。\nSettings saved.", parent=main_root)
+        messagebox.showinfo("ScreenLingo",
+                            "设置已保存，快捷键已生效。\nSettings saved.",
+                            parent=main_root)
 
-    tk.Button(rows, text="保存 / Save", command=save, width=10).pack(anchor="e")
+    make_btn(footer, "确定  OK", save, size=13, bold=True,
+             bg=THEME["accent"], fg="#ffffff", padx=36, pady=10).pack(side="right")
 
 
 # ---------- 开机自启（注册表） ----------

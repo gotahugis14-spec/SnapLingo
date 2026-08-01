@@ -39,7 +39,7 @@
 3. 弹出三个选项：🌐 翻译 / 📋 复制文字 / ✨ 翻译+复制，点一个
 4. 结果窗口弹出，文字**已经自动复制到剪贴板**，直接 `Ctrl + V` 粘贴即可
 
-> 💡 第一次使用如果提示"未配置 API key"，请看下方 [配置 API key](#配置-api-key)。
+> 💡 第一次使用如果提示"未配置 API key"，请看下方 [🔑 API Key 是什么？去哪里获取](#-api-key-是什么去哪里获取新手必看)。
 
 ### 🎨 快捷键（可以换绑！）
 
@@ -55,31 +55,40 @@
 
 右键托盘图标 → 「设置…」，可以改：
 
+> 💡 改完记得点**右下角的绿色「确定」按钮**，点按后才会保存并生效（快捷键立即生效，不用重启）。
+
 | 配置项 | 说明 |
 |---|---|
 | OCR 后端 | `auto`（默认，自动选择）/ `tesseract`（本地离线）/ `api`（云端，最准） |
-| 全局快捷键 | 见上方，随时换绑 |
-| API Key | 云端识别/翻译的密钥（也可以放环境变量） |
+| 全局快捷键 | 输入新组合键即可换绑（如 `alt+shift+k`、`f8`） |
+| API Key | 云端识别/翻译的密钥，输入框右侧有个 👁 小眼睛，点击可切换明文/密文显示 |
 | 视觉模型 / 翻译模型 | 默认已配好 SiliconFlow 的模型，一般不用改 |
 | 开机自启 | 勾选后开机自动运行，真正"挂在后台" |
 
 配置文件位置：`%APPDATA%\ScreenLingo\config.json`
 
-#### 配置 API key
+#### 🔑 API Key 是什么？去哪里获取？（新手必看）
 
-ScreenLingo 默认使用 [SiliconFlow](https://siliconflow.cn) 的 OpenAI 兼容接口（免费注册即有额度）。两种方式配置：
+**API Key 是一串 `sk-` 开头的密钥**，相当于你调用云端 AI 服务的"账号密码"。ScreenLingo 用它来调用云端识别和翻译（默认用 [SiliconFlow / 硅基流动](https://siliconflow.cn)，免费注册就有额度）。
+
+**获取步骤（约 2 分钟）：**
+
+1. 打开 https://cloud.siliconflow.cn ，用手机号或邮箱**注册并登录**
+2. 登录后进入左侧菜单的「**API 密钥**」页面（或点右上角头像 → 账户管理 → API 密钥）
+3. 点「**新建 API 密钥**」，起个名字（随便填，比如 `screenlingo`），点创建
+4. 创建后**立即复制**那串 `sk-` 开头的字符串（关闭页面后不再显示）
+
+**填到哪里：** 托盘右键 → 设置 → 在「API Key」一栏粘贴，点右下角「确定」。
+
+**另一种方式（不打开设置也能配）：** 设置环境变量，key 不会存进任何文件：
 
 ```bash
-# 方式一：环境变量（推荐，最安全，key 不会存进文件）
 set SILICONFLOW_API_KEY=sk-你的key
 ```
 
-```jsonc
-// 方式二：编辑 %APPDATA%\ScreenLingo\config.json
-{ "api_key": "sk-你的key" }
-```
-
-也可以用任意 OpenAI 兼容服务：改 `api_base_url` 和模型名即可。
+> 配置也可以直接改 `%APPDATA%\ScreenLingo\config.json` 里的 `api_key` 字段。
+> 设置窗口里点「🔑 不知道 API Key 是什么？点这里」会直接打开密钥页面。
+> 想用其他 OpenAI 兼容服务？改 `api_base_url` 和模型名即可。
 
 ### 🏗️ 从源码运行
 
@@ -116,8 +125,8 @@ ScreenLingo/
 **Q：按快捷键没反应？**
 A：先确认托盘有绿色图标。如果被其他软件占用了热键，到设置里换一个组合键。仍不行就右键托盘图标 → 退出，然后**以管理员身份**重新运行。
 
-**Q：提示"未配置 API key"？**
-A：按上方 [配置 API key](#配置-api-key) 配置后重新框选。纯本地用户可把 OCR 后端切到 `tesseract`（需自行安装 Tesseract 和中文语言包 chi_sim）。
+**Q：提示"未配置 API key"？/ API Key 是什么？**
+A：API Key 是一串 `sk-` 开头的密钥，在 [SiliconFlow](https://cloud.siliconflow.cn) 注册后，到「API 密钥」页新建并复制即可（详细步骤见上方「🔑 API Key 是什么？」）。配置后重新框选。纯本地用户可把 OCR 后端切到 `tesseract`（需自行安装 Tesseract 和中文语言包 chi_sim）。
 
 **Q：翻译出来不对 / 想要指定翻译方向？**
 A：ScreenLingo 按文字内容自动判断：有中文字符就翻成英文，否则翻成中文。
@@ -164,11 +173,14 @@ Default: `Ctrl + Alt + O`. Rebind anytime: right-click tray icon → **Settings*
 
 Right-click the tray icon → **Settings**:
 - **OCR backend**: `auto` (default) / `tesseract` (local, offline) / `api` (cloud, most accurate)
-- **API Key**: for cloud OCR/translation (or use env var `SILICONFLOW_API_KEY`)
+- **Global hotkey**: type a new combo to rebind (e.g. `alt+shift+k`, `f8`)
+- **API Key**: the `sk-` key for cloud OCR/translation. Click the 👁 eye icon next to the field to toggle between masked/plain text
 - **Vision/Translate model**: preconfigured for SiliconFlow, usually no need to change
 - **Autostart**: run at Windows startup
 
-Config file: `%APPDATA%\ScreenLingo\config.json`
+> 💡 Click the green **OK** button at the bottom-right to apply changes (hotkey rebinds immediately, no restart).
+
+**Where do I get an API Key?** Register at [SiliconFlow](https://cloud.siliconflow.cn) (free tier available) → menu **API Keys** → **Create API Key** → copy the `sk-` string immediately (it won't be shown again). Paste it in Settings → API Key → OK. Alternatively set the env var `SILICONFLOW_API_KEY` so the key never touches a file. Config file: `%APPDATA%\ScreenLingo\config.json`
 
 ### 🏗️ Run from source
 
