@@ -1,9 +1,9 @@
-# 🎯 ScreenLingo · 截图文字提取 + 中英互译
+# 🎯 SnapLingo · 截图文字提取 + 中英互译
 ### Screenshot OCR + Chinese ⇄ English Translation, one global hotkey away
 
 [English](#english-overview) | [中文](#中文总览)
 
-![platform](https://img.shields.io/badge/platform-Windows-0078d6) ![python](https://img.shields.io/badge/python-3.10%2B-3776ab) ![license](https://img.shields.io/badge/license-MIT-green) ![size](https://img.shields.io/badge/exe-23MB-blue)
+![platform](https://img.shields.io/badge/platform-Windows-0078d6) ![python](https://img.shields.io/badge/python-3.10%2B-3776ab) ![license](https://img.shields.io/badge/license-MIT-green) ![size](https://img.shields.io/badge/exe-23MB-blue) ![stars](https://img.shields.io/github/stars/gotahugis14-spec/SnapLingo) ![release](https://img.shields.io/github/v/release/gotahugis14-spec/SnapLingo)
 
 ---
 
