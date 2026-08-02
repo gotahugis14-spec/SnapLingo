@@ -1,0 +1,37 @@
+name: 💡 功能建议 / Feature Request
+description: 给 SnapLingo 提一个新想法
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## 感谢你的想法！请先搜索 [Issues](../../issues) 看是否已有人提过。
+  - type: textarea
+    id: problem
+    attributes:
+      label: 解决了什么问题 / What problem does it solve
+      description: 你遇到的场景是什么？
+      placeholder: 我经常要处理日文网页，希望默认翻译方向能固定为日文…
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: 你的想法 / Your idea
+      description: 希望怎么做？
+      placeholder: 在设置里加一个"默认翻译方向"下拉…
+    validations:
+      required: true
+  - type: textarea
+    id: alternative
+    attributes:
+      label: 备选方案 / Alternatives
+      description: 有没有其他可行做法？（可选）
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: 自查清单 / Checklist
+      options:
+        - label: 我已搜索过 Issues，没有重复
+          required: true

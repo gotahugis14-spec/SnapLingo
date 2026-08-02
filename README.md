@@ -62,6 +62,10 @@
 
 ### 📸 效果预览
 
+> 🎬 **演示视频 / Demo GIF（待补充）**：录制后放入 `docs/demo.gif` 即可自动显示在这里。
+>
+> 录制建议：用 [ScreenToGif](https://www.screentogif.com/) 录 10 秒——按热键 → 框选 → 结果弹出 → 切换翻译语种，存为 `docs/demo.gif`。
+
 ![截图遮罩效果](docs/screenshot-mask.png)
 
 橙色虚线框 + 暗色遮罩 + 实时尺寸提示（与 Windows 自带截图工具一致）。
@@ -156,7 +160,7 @@ A：不会。程序带单实例锁，重复启动会提示"已经在运行中"�
 A：`%APPDATA%\ScreenLingo\logs\screenlingo.log`（自动轮转，最多保留 3 份）。报 issue 时附上日志会很有帮助。
 
 **Q：exe 被杀毒软件报毒？**
-A：这是 PyInstaller 打包程序的常见误报。本项目完全开源，代码可自查；添加信任即可。
+A：这是 PyInstaller 打包程序的常见误报。本项目完全开源，代码可自查；添加信任即可。下载后也可以核对 Release 里的 `SHA256.txt` 与本地文件是否一致，确认真伪。
 
 **Q：多显示器能用吗？**
 A：v0.2 支持主显示器框选；多显示器适配在规划中。
@@ -208,6 +212,10 @@ A：v0.2 支持主显示器框选；多显示器适配在规划中。
 Rebind anytime: right-click tray icon → **Settings** → three hotkey fields → **OK**. Takes effect immediately — no restart needed.
 
 ### 📸 Preview
+
+> 🎬 **Demo GIF (coming soon)**: drop a recording at `docs/demo.gif` and it will show up here automatically.
+>
+> Recording tip: use [ScreenToGif](https://www.screentogif.com/) to capture ~10s — hotkey → select → result → switch target language — save as `docs/demo.gif`.
 
 ![Selection mask](docs/screenshot-mask.png)
 
