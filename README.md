@@ -3,7 +3,7 @@
 
 [English](#english-overview) | [中文](#中文总览)
 
-![platform](https://img.shields.io/badge/platform-Windows-0078d6) ![python](https://img.shields.io/badge/python-3.10%2B-3776ab) ![license](https://img.shields.io/badge/license-MIT-green) ![size](https://img.shields.io/badge/exe-23MB-blue) ![stars](https://img.shields.io/github/stars/gotahugis14-spec/SnapLingo) ![release](https://img.shields.io/github/v/release/gotahugis14-spec/SnapLingo)
+![platform](https://img.shields.io/badge/platform-Windows-0078d6) ![python](https://img.shields.io/badge/python-3.10%2B-3776ab) ![license](https://img.shields.io/badge/license-MIT-green) ![size](https://img.shields.io/badge/exe-23MB-blue) ![stars](https://img.shields.io/github/stars/gotahugis14-spec/SnapLingo) ![release](https://img.shields.io/github/v/release/gotahugis14-spec/SnapLingo) ![downloads](https://img.shields.io/github/downloads/gotahugis14-spec/SnapLingo/total) ![contributors](https://img.shields.io/github/contributors/gotahugis14-spec/SnapLingo)
 
 ---
 
@@ -25,7 +25,10 @@
 
 **第 1 步：拿到程序**
 
-- 方式 A（推荐，最简单）：到 [Releases](../../releases) 页面下载 `ScreenLingo.exe`，或者直接双击项目文件夹里的 `ScreenLingo.exe`
+> ⬇️ **直接下载**（免安装，双击即用）：
+> [![Download v0.5](https://img.shields.io/badge/⬇%EF%B8%8F%20Download-SnapLingo.exe-00c853?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/gotahugis14-spec/SnapLingo/releases/latest/download/ScreenLingo.exe)
+
+- 方式 A（推荐，最简单）：点击上方按钮下载最新版，或到 [Releases](../../releases) 页面下载 `ScreenLingo.exe`
 - 方式 B：自己从源码运行，见下方 [从源码运行](#从源码运行)
 
 **第 2 步：启动**
@@ -166,6 +169,12 @@ A：v0.2 支持主显示器框选；多显示器适配在规划中。
 
 觉得好用就点个 Star 吧，这是开源作者最大的动力 ❤️
 
+### 🧑‍🤝‍🧑 贡献者 / Contributors
+
+<a href="https://github.com/gotahugis14-spec"><img src="https://avatars.githubusercontent.com/gotahugis14-spec?s=64" width="48" height="48" alt="gotahugis14-spec"/></a>
+
+想一起改进？欢迎提交 Issue / PR，详见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+
 ---
 
 ## English Overview
@@ -245,3 +254,9 @@ Output: `dist\ScreenLingo.exe` (~23 MB), runs on any Windows PC without Python.
 ### ⭐ Support
 
 If this saves you time, a Star means a lot ❤️
+
+### 🧑‍🤝‍🧑 Contributors
+
+<a href="https://github.com/gotahugis14-spec"><img src="https://avatars.githubusercontent.com/gotahugis14-spec?s=64" width="48" height="48" alt="gotahugis14-spec"/></a>
+
+Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md).
